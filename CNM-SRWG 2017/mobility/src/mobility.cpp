@@ -170,7 +170,7 @@ void targetDetectedReset(const ros::TimerEvent& event);
 //--------------------------------------------
 
 
-double CENTEROFFSET = 0.45;                                 //offset for seeing center
+double CENTEROFFSET = .55;                                 //offset for seeing center
 
 //Central collection point has been seen (aka the nest)
 bool centerSeen = false;                                    //If we CURRENTLY see the center
@@ -222,9 +222,6 @@ ros::Duration cnmTurn180TimerTime(5);
 ros::Timer cnmReverseTimer;
 ros::Duration cnmReverseTimerTime(2);
 
-ros::Timer cnmForwardTimer;
-ros::Duration cnmForwardTimerTime(2);
-
 bool cnmInitialPositioningComplete = false;
 
 void InitComp();                            //INIT COMPONENTS (Builds map, sets Pose 2D Objects defaults)
@@ -239,6 +236,8 @@ bool CNMRotateCode();                       //A function for the Rotate Mobility
 
 void CNMSkidSteerCode();                    //A function with all the skid steer mobility code
 
+bool CNMReverseProtocol();
+
 //Timer Functions/Callbacks
 void CNMAvoidance(const ros::TimerEvent& event);    //Timer Function(when timer fires, it runs this code)
 void CNMInitPositioning(const ros::TimerEvent& event);
@@ -246,7 +245,6 @@ void CNMAvoidOtherTargets(const ros::TimerEvent& event);
 void CNMUpdateSearch(const ros::TimerEvent& event);
 void CNMTurn180(const ros::TimerEvent& event);
 void CNMReverseTimer(const ros::TimerEvent& event);
-void CNMForwardTimer(const ros::TimerEvent& event);
 
 //MAIN
 //--------------------------------------------
@@ -307,12 +305,6 @@ int main(int argc, char **argv)
     cnmReverseTimer.stop();
     cnmTurn180Timer = mNH.createTimer(cnmTurn180TimerTime, CNMTurn180, true);
     cnmTurn180Timer.stop();
-
-
-    //TIMER USED FOR DRIVING FORWARD
-        //TIED TO REVERSE AND 180
-    cnmForwardTimer = mNH.createTimer(cnmForwardTimerTime, CNMForwardTimer, true);
-    cnmForwardTimer.stop();
 
     //FOR AVOIDING OBSTACLES
     cnmObstacleAvoidanceTimer = mNH.createTimer(cnmObstacleTimerTime, CNMAvoidance, true);
@@ -382,147 +374,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
         //---------------------------------------------
         if(cnmReverse)
         {
-
-            //If this is the first time entering this section
-            //---------------------------------------------
-            if(firstReverse)
-            {
-                //Pass Info to Info Log
-                //---------------------------------------------
-                std_msgs::String msg;
-                msg.data = "STARTING REVERSE TIMER";
-                infoLogPublisher.publish(msg);
-
-                //Start First Timer
-                //---------------------------------------------
-                cnmReverseTimer.start();
-
-                //Set Variables Appropriately
-                //---------------------------------------------
-                firstReverse = false;
-                cnmReverseDone = false;
-                cnmTurn180Done = false;
-                cnmCheckTimer = 0;
-            }
-
-            //If We aren't done reversing and if our backup counter says we are within bounds
-            //---------------------------------------------
-            if (!cnmReverseDone && cnmCheckTimer <= 70)
-            {
-
-                //If we hit the MAX boundary for our TIMER
-                //---------------------------------------------
-                if(cnmCheckTimer == 70)
-                {
-                    //We have finished backing up
-                    //---------------------------------------------
-
-                    //Relay this to Info Log
-                    //---------------------------------------------
-                    //std_msgs::String msg;
-                    //msg.data = "REVERSE TIMER DONE, STARTING TURN180";
-                    //infoLogPublisher.publish(msg);
-
-                    cnmTurn180Timer.start();
-
-                    //set NEW heading 180 degress from current theta
-                    goalLocation.theta = currentLocation.theta + M_PI;
-
-                    //select position 25 cm from the robots location before attempting to go into search pattern
-                    goalLocation.x = currentLocation.x + (.25 * cos(goalLocation.theta));
-                    goalLocation.y = currentLocation.y + (.25 * sin(goalLocation.theta));
-
-                    //change robot state
-                    stateMachineState = STATE_MACHINE_ROTATE;
-
-                    //msg.data = "REVERSE VARIABLES RESET";
-                    //infoLogPublisher.publish(msg);
-
-                    cnmCheckTimer = 0;
-
-                    //START NEXT TIMER (TURN 180 DEGREES)
-                    //---------------------------------------------
-                    cnmTurn180Timer.start();
-
-                    //STOP MOVING!!!!
-                    //---------------------------------------------
-                    sendDriveCommand(0.0,0.0);
-
-                    cnmReverseDone = true;
-                }
-
-                //If we haven't finished our TIMER or our CHECK
-                //---------------------------------------------
-                else
-                {
-
-                    //BACKUP!!!
-                    //---------------------------------------------
-                    sendDriveCommand(-0.2, 0);
-
-                    //SPIT COUNTER COUNT
-                    //---------------------------------------------
-                    //stringstream ss;
-                    //ss << "COUNTER: " << cnmCheckTimer;
-                    //msg.data = ss.str();
-                    //infoLogPublisher.publish(msg);
-
-                    //INCREMENT
-                    //---------------------------------------------
-                    cnmCheckTimer++;
-                }
-
-                return;
-
-            }
-
-            //OUR REVERSE AND 180 TURN ARE DONE
-            //---------------------------------------------
-            if(cnmReverseDone && cnmTurn180Done)
-            {
-
-                //RELAY WE FINISHED TO INFO LOG
-                //---------------------------------------------
-                //std_msgs::String msg;
-                //msg.data = "MOVEMENT COMPLETE";
-                //infoLogPublisher.publish(msg);
-
-                std_msgs::String msg;
-                stringstream ss;
-
-                //Continue an interrupted search pattern
-                //---------------------------------------------
-                goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
-
-                //ROTATE!!!
-                //---------------------------------------------
-                stateMachineState = STATE_MACHINE_ROTATE;
-
-                int position = searchController.cnmGetSearchPosition();
-
-                double distance = searchController.cnmGetSearchDistance();
-
-                ss.clear();
-
-                //SPIT OUT NEXT POINT AND HOW FAR OUT WE ARE GOING
-                //---------------------------------------------
-                ss << "Traveling to point " << position << " in pattern:  " << distance;
-                msg.data = ss.str();
-                infoLogPublisher.publish(msg);
-
-
-                //RESET VARIABLES
-                //---------------------------------------------
-                //msg.data = "RESET VARIABLES";
-                //infoLogPublisher.publish(msg);
-
-                cnmReverse = false;
-                cnmReverseDone = false;
-                firstReverse = true;
-                cnmReverseDone = false;
-
-                cnmCheckTimer = 0;
-            }
+            if(CNMReverseProtocol()) { return; }
         }
 
         if(cnmRotate)
@@ -747,10 +599,10 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                     infoLogPublisher.publish(msg);
                 }
 
-                if(!cnmInitialPositioningComplete)
-                {
-                    location.y = currentLocation.y + (CENTEROFFSET * (sin(currentLocation.theta - (M_PI/4))));
-                }
+                //if(!cnmInitialPositioningComplete)
+                //{
+                    //location.y = currentLocation.y + (CENTEROFFSET * (sin(currentLocation.theta - (M_PI/4))));
+                //}
             }
             else if(cnmLocatedCenterFirst && cnmInitialPositioningComplete)
             {
@@ -759,10 +611,10 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 std_msgs::String msg;
                 msg.data = "Refound center, updating location";
                 infoLogPublisher.publish(msg);
-
-                location.x = currentLocation.x + (CENTEROFFSET * (cos(currentLocation.theta)));
-                location.y = currentLocation.y + (CENTEROFFSET * (sin(currentLocation.theta))); //(M_PI/4)));
             }
+
+            location.x = currentLocation.x + (CENTEROFFSET * (cos(currentLocation.theta)));
+            location.y = currentLocation.y + (CENTEROFFSET * (sin(currentLocation.theta))); //(M_PI/4)));
 
             //send to searchController
             //---------------------------------------------
@@ -1405,6 +1257,152 @@ void CNMSkidSteerCode()
         // move back to transform step
         stateMachineState = STATE_MACHINE_TRANSFORM;
     }
+}
+
+bool CNMReverseProtocol()
+{
+    //If this is the first time entering this section
+    //---------------------------------------------
+    if(firstReverse)
+    {
+        //Pass Info to Info Log
+        //---------------------------------------------
+        std_msgs::String msg;
+        msg.data = "STARTING REVERSE TIMER";
+        infoLogPublisher.publish(msg);
+
+        //Start First Timer
+        //---------------------------------------------
+        cnmReverseTimer.start();
+
+        //Set Variables Appropriately
+        //---------------------------------------------
+        firstReverse = false;
+        cnmReverseDone = false;
+        cnmTurn180Done = false;
+        cnmCheckTimer = 0;
+    }
+
+    //If We aren't done reversing and if our backup counter says we are within bounds
+    //---------------------------------------------
+    if (!cnmReverseDone && cnmCheckTimer <= 70)
+    {
+
+        //If we hit the MAX boundary for our TIMER
+        //---------------------------------------------
+        if(cnmCheckTimer == 70)
+        {
+            //We have finished backing up
+            //---------------------------------------------
+
+            //Relay this to Info Log
+            //---------------------------------------------
+            //std_msgs::String msg;
+            //msg.data = "REVERSE TIMER DONE, STARTING TURN180";
+            //infoLogPublisher.publish(msg);
+
+            cnmTurn180Timer.start();
+
+            //set NEW heading 180 degress from current theta
+            goalLocation.theta = currentLocation.theta + M_PI;
+
+            //select position 25 cm from the robots location before attempting to go into search pattern
+            goalLocation.x = currentLocation.x + (.25 * cos(goalLocation.theta));
+            goalLocation.y = currentLocation.y + (.25 * sin(goalLocation.theta));
+
+            //change robot state
+            stateMachineState = STATE_MACHINE_ROTATE;
+
+            //msg.data = "REVERSE VARIABLES RESET";
+            //infoLogPublisher.publish(msg);
+
+            cnmCheckTimer = 0;
+
+            //START NEXT TIMER (TURN 180 DEGREES)
+            //---------------------------------------------
+            cnmTurn180Timer.start();
+
+            //STOP MOVING!!!!
+            //---------------------------------------------
+            sendDriveCommand(0.0,0.0);
+
+            cnmReverseDone = true;
+        }
+
+        //If we haven't finished our TIMER or our CHECK
+        //---------------------------------------------
+        else
+        {
+
+            //BACKUP!!!
+            //---------------------------------------------
+            sendDriveCommand(-0.2, 0);
+
+            //SPIT COUNTER COUNT
+            //---------------------------------------------
+            //stringstream ss;
+            //ss << "COUNTER: " << cnmCheckTimer;
+            //msg.data = ss.str();
+            //infoLogPublisher.publish(msg);
+
+            //INCREMENT
+            //---------------------------------------------
+            cnmCheckTimer++;
+        }
+
+        return true;
+
+    }
+
+    //OUR REVERSE AND 180 TURN ARE DONE
+    //---------------------------------------------
+    if(cnmReverseDone && cnmTurn180Done)
+    {
+
+        //RELAY WE FINISHED TO INFO LOG
+        //---------------------------------------------
+        //std_msgs::String msg;
+        //msg.data = "MOVEMENT COMPLETE";
+        //infoLogPublisher.publish(msg);
+
+        std_msgs::String msg;
+        stringstream ss;
+
+        //Continue an interrupted search pattern
+        //---------------------------------------------
+        goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
+
+        //ROTATE!!!
+        //---------------------------------------------
+        stateMachineState = STATE_MACHINE_ROTATE;
+
+        int position = searchController.cnmGetSearchPosition();
+
+        double distance = searchController.cnmGetSearchDistance();
+
+        ss.clear();
+
+        //SPIT OUT NEXT POINT AND HOW FAR OUT WE ARE GOING
+        //---------------------------------------------
+        ss << "Traveling to point " << position << " in pattern:  " << distance;
+        msg.data = ss.str();
+        infoLogPublisher.publish(msg);
+
+
+        //RESET VARIABLES
+        //---------------------------------------------
+        //msg.data = "RESET VARIABLES";
+        //infoLogPublisher.publish(msg);
+
+        cnmReverse = false;
+        cnmReverseDone = false;
+        firstReverse = true;
+        cnmReverseDone = false;
+
+        cnmCheckTimer = 0;
+    }
+
+    return false;
 }
 
 //CNM TIMER FUNCTIONS
