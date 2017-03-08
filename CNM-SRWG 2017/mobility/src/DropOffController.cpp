@@ -1,6 +1,7 @@
 #include "DropOffController.h"
 
 bool isLost;
+SearchController DropOffSearch;
 
 DropOffController::DropOffController()
 {
@@ -59,6 +60,7 @@ void DropOffController::calculateDecision() {
         {
             result.reset = true; //tell mobility to reset to search parameters
         }
+
         else if (timerTimeElapsed >= 1)
         {
             //open fingers
@@ -73,12 +75,15 @@ void DropOffController::calculateDecision() {
         }
 
         isLost = false;
+        DropOffSearch.setCenterSeen(true);
+        DropOffSearch.setCenterLocation(centerLocation);
+
         return;
     }
 
     //check to see if we are driving to the center location or if we need to drive in a circle and look.
-    if (distanceToCenter > collectionPointVisualDistance && !circularCenterSearching && count == 0) {
-
+    if (distanceToCenter > collectionPointVisualDistance && !circularCenterSearching && count == 0)
+    {
         //set angle to center as goal heading
         result.centerGoal.theta = atan2(centerLocation.y - currentLocation.y, centerLocation.x - currentLocation.x);
 
@@ -89,14 +94,6 @@ void DropOffController::calculateDecision() {
     }
     else if (timerTimeElapsed >=5)//spin search for center
     {
-/*
-        if(dropOffSearch->getCenterSeen())
-        {
-            dropOffSearch->setCenterSeen(false);
-        }
-
-        result.centerGoal = dropOffSearch->search(currentLocation);
-*/
         //sets a goal that is 60cm from the centerLocation and spinner
         //radians counterclockwise from being purly along the x-axis.
 
@@ -106,14 +103,12 @@ void DropOffController::calculateDecision() {
 
         if(isLost == false)
         {
-
-            DropOffSearch->setCenterSeen(false);
-            DropOffSearch->setCenterLocation(currentLocation);
+            DropOffSearch.setCenterSeen(false);
+            DropOffSearch.setCenterLocation(currentLocation);
             isLost = true;
-
         }
 
-        result.centerGoal = DropOffSearch->search(currentLocation);
+        result.centerGoal = DropOffSearch.search(currentLocation);
 
 //        spinner += 45*(M_PI/180); //add 45 degrees in radians to spinner.
 //        if (spinner > 2*M_PI)
@@ -126,8 +121,6 @@ void DropOffController::calculateDecision() {
         //safety flag to prevent us trying to drive back to the
         //center since we have a block with us and the above point is
         //greater than collectionPointVisualDistance from the center.
-
-
     }
 
 
@@ -193,6 +186,7 @@ void DropOffController::calculateDecision() {
         if (count == 0 && seenEnoughCenterTags && timeElapsedSinceTimeSinceSeeingEnoughCenterTags > 1) {
             centerSeen = false;
         }
+
         centerApproach = true;
         prevCount = count;
         count = 0;
@@ -243,6 +237,9 @@ void DropOffController::setDataLocations(geometry_msgs::Pose2D center, geometry_
     centerLocation = center;
     currentLocation = current;
     timerTimeElapsed = sync;
+
+    if(!isLost) { DropOffSearch.setCenterLocation(center); }
+
     calculateDecision();
 }
 
