@@ -6,7 +6,8 @@ double const MIN_DIST_SEARCH = .7;
 double const MAX_DIST_SEARCH = 2.0;
 
 bool hasDoneFirstRotation;
-bool reverseSearch;
+
+int numTimesAvoidedObst = 0;
 
 SearchController::SearchController() 
 {    
@@ -32,10 +33,25 @@ SearchController::SearchController()
 
     hasDoneFirstRotation = false;
     reverseSearch = false;
+    avoidedObstacle = false;
 }
 
 geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLocation)
 {
+
+    if(avoidedObstacle)
+    {
+        //if we have called obst avoidance 4+ times in a row
+        if(numTimesAvoidedObst >= 4)
+        {
+            //increment search loop to next point
+            searchLoop++;
+        }
+    }
+    else
+    {
+        numTimesAvoidedObst = 0;
+    }
 
     geometry_msgs::Pose2D goalLocation;
 
@@ -60,6 +76,9 @@ geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLoca
     {
         goalLocation = SearchLeft(currentLocation);
     }
+
+    //RESET variable
+    avoidedObstacle = false;
 
     return goalLocation;
 }
@@ -97,7 +116,6 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
       //---------------------------------------------
       if (searchLoop == 0)
       {
-              searchLoop++;
 
               if(hasDoneFirstRotation == false)
               {
@@ -108,6 +126,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
                   searchCounter = searchCounter + searchDist;         //Increment at 0.2 for best results
               }
 
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -121,7 +140,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
         else if (searchLoop == 9)
         {
 
-          searchLoop = 0;
+          if(!avoidedObstacle) { searchLoop = 0; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
           goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
@@ -138,7 +157,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 8)
           {
-              searchLoop = 0;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -153,7 +172,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 7)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y + searchCounter;
@@ -168,7 +187,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 6)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y + searchCounter;
@@ -183,7 +202,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 5)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -198,7 +217,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 4)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter;
               goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
@@ -213,7 +232,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 3)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y - searchCounter;
@@ -228,7 +247,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 2)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y - searchCounter;
@@ -243,8 +262,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 1)
           {
-
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter;
               goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
@@ -296,7 +314,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
       //---------------------------------------------
       if (searchLoop == 0)
       {
-          searchLoop++;
+          if(!avoidedObstacle) { searchLoop++; }
 
           if(hasDoneFirstRotation == false)
           {
@@ -322,7 +340,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 1)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -338,7 +356,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 2)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y + searchCounter;
@@ -353,7 +371,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 3)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y + searchCounter;
@@ -368,7 +386,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 4)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -383,7 +401,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 5)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter;
               goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
@@ -398,7 +416,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 6)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y - searchCounter;
@@ -413,7 +431,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //---------------------------------------------
           else if (searchLoop == 7)
           {
-              searchLoop++;
+              if(!avoidedObstacle) { searchLoop++; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
               goalLocation.y = cnmCenterLocation.y - searchCounter;
@@ -429,24 +447,23 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           else if (searchLoop == 8)
           {
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter;
-              goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+            if(!avoidedObstacle) { searchLoop++; }
+
+            goalLocation.x = cnmCenterLocation.x + searchCounter;
+            goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
+            goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
   /*
           goalLocation.theta = (15 * M_PI)/8;
           goalLocation.x = (cnmCenterLocation.x + searchCounter) * cos(goalLocation.theta);
           goalLocation.y = (cnmCenterLocation.y + searchCounter) * sin(goalLocation.theta);
   */
-              //cnmOriginalSearchDistance = searchCounter;
-
-              searchLoop++;
           }
 
       //between 0 and PI/6
       //---------------------------------------------
       else if (searchLoop == 9)
       {
-          searchLoop++;
+          if(!avoidedObstacle) { searchLoop = 0; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
           goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -634,6 +651,12 @@ int SearchController::cnmGetSearchPosition()
 double SearchController::cnmGetSearchDistance()
 {
     return searchCounter;
+}
+
+void SearchController::obstacleWasAvoided()
+{
+    avoidedObstacle = true;
+    numTimesAvoidedObst++;
 }
 
 
