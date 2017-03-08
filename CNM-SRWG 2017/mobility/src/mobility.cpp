@@ -170,7 +170,9 @@ void targetDetectedReset(const ros::TimerEvent& event);
 //--------------------------------------------
 
 
-double CENTEROFFSET = .55;                                 //offset for seeing center
+double CENTEROFFSET = .95;                                  //offset for seeing center
+double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
+double AVOIDTARGDIST = .35;                                 //distance to drive for avoiding targets
 
 //Central collection point has been seen (aka the nest)
 bool centerSeen = false;                                    //If we CURRENTLY see the center
@@ -203,12 +205,12 @@ bool cnmAvoidTargets = false;
 bool cnmRotate = false;
 
 //Obstacle Avoidance Timer and Duration
-ros::Timer cnmObstacleAvoidanceTimer;
-ros::Duration cnmObstacleTimerTime(10);
+ros::Timer cnmAvoidObstacleTimer;
+ros::Duration cnmAvoidObstacleTimerTime(10);
 
 //Initial turn 180 degrees
 ros::Timer cnmInitialPositioningTimer;
-ros::Duration cnmInitialPositionTimerTime(10);      //time in seconds
+ros::Duration cnmInitialPositionTimerTime(8);      //time in seconds
 
 ros::Timer cnmAvoidOtherTargetTimer;
 ros::Duration cnmAvoidOtherTargetTimerTime(4);
@@ -239,7 +241,7 @@ void CNMSkidSteerCode();                    //A function with all the skid steer
 bool CNMReverseProtocol();
 
 //Timer Functions/Callbacks
-void CNMAvoidance(const ros::TimerEvent& event);    //Timer Function(when timer fires, it runs this code)
+void CNMAvoidObstacle(const ros::TimerEvent& event);    //Timer Function(when timer fires, it runs this code)
 void CNMInitPositioning(const ros::TimerEvent& event);
 void CNMAvoidOtherTargets(const ros::TimerEvent& event);
 void CNMUpdateSearch(const ros::TimerEvent& event);
@@ -307,8 +309,8 @@ int main(int argc, char **argv)
     cnmTurn180Timer.stop();
 
     //FOR AVOIDING OBSTACLES
-    cnmObstacleAvoidanceTimer = mNH.createTimer(cnmObstacleTimerTime, CNMAvoidance, true);
-    cnmObstacleAvoidanceTimer.stop();
+    cnmAvoidObstacleTimer = mNH.createTimer(cnmAvoidObstacleTimerTime, CNMAvoidObstacle, true);
+    cnmAvoidObstacleTimer.stop();
 
     //FOR THE FIRST SECTION OF CODE
     cnmInitialPositioningTimer = mNH.createTimer(cnmInitialPositionTimerTime, CNMInitPositioning, true);
@@ -385,6 +387,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
 
             return;
         }
+
 
         // time since timerStartTime was set to current time
         timerTimeElapsed = time(0) - timerStartTime;
@@ -613,8 +616,13 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 infoLogPublisher.publish(msg);
             }
 
-            location.x = currentLocation.x + (CENTEROFFSET * (cos(currentLocation.theta)));
-            location.y = currentLocation.y + (CENTEROFFSET * (sin(currentLocation.theta))); //(M_PI/4)));
+            //NORMALIZE ANGLE
+            double normCurrentAngle = angles::normalize_angle_positive(currentLocation.theta);
+
+            //if( < normCurrentAngle < )
+
+            location.x = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+            location.y = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle))); //(M_PI/4)));
 
             //send to searchController
             //---------------------------------------------
@@ -712,121 +720,80 @@ void modeHandler(const std_msgs::UInt8::ConstPtr& message)
 
 void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
 {
+    static bool firstTimeRotate = true;
+    static bool firstTimeSeeObst = true;
 
     if (currentMode == 1 || currentMode == 0) { return; }
 
-    //if avoiding an obstacle
-    if(cnmAvoidObstacle == true)
+    //no matter what we receive from obstacle
+    else if ((!targetDetected || targetCollected) && (message->data > 0))
     {
-        if(message->data == 0)
+        cnmSeenAnObstacle = true;
+
+        cnmAvoidObstacleTimer.start();
+
+        if(!cnmAvoidObstacle)
         {
-            std_msgs::String msg;
-            msg.data = "Navigated Obstacle";
-            infoLogPublisher.publish(msg);
-
-            //select new heading
-            goalLocation.theta = currentLocation.theta;
-
-            //select new position 30 cm from current location
-            goalLocation.x = currentLocation.x + (0.7 * cos(goalLocation.theta));
-            goalLocation.y = currentLocation.y + (0.7 * sin(goalLocation.theta));
-
-            //if(targetCollected)
-            //{
-            //    msg.data = "Returning to Nest";
-            //    infoLogPublisher.publish(msg);
-
-            //    goalLocation = centerLocation;
-
-            //    stateMachineState = STATE_MACHINE_ROTATE;
-            //}
-
-            //else
-            //{
-                /*
-                // continues an interrupted search
-                goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
-
-                int position = searchController.cnmGetSearchPosition();
-
-                double distance = searchController.cnmGetSearchDistance();
-
-                stringstream ss;
-                ss << "Traveling to point " << position << " in pattern:  " << distance;
-                msg.data = ss.str();
+            if(firstTimeSeeObst)
+            {
+                std_msgs::String msg;
+                msg.data = "SEE OBSTACLE; STOPPING";
                 infoLogPublisher.publish(msg);
-                */
-            //}
+                firstTimeSeeObst = false;
+            }
+
+            sendDriveCommand(0.0, 0.0);
+        }
+        else
+        {
+            if(firstTimeRotate)
+            {
+                std_msgs::String msg;
+                msg.data = "ROTATING";
+                infoLogPublisher.publish(msg);
+
+                searchController.obstacleWasAvoided();
+
+                firstTimeRotate = false;
+            }
+
+            //if searching right, turn right
+            if(searchController.cnmIsAlternating()) { sendDriveCommand(0.0, -0.2); }
+
+            //if searching left, turn left
+            else { sendDriveCommand(0.0, 0.2); }
+
+        }
+    }
+    //if we saw an obstacle but no longer see one
+    else if (cnmSeenAnObstacle && (!targetDetected || targetCollected) && (message->data == 0))
+    {
+        cnmSeenAnObstacle = false;
+        cnmAvoidObstacleTimer.stop();
+
+        if(cnmAvoidObstacle)
+        {
+            if(!firstTimeRotate)
+            {
+                std_msgs::String msg;
+                msg.data = "DRIVING FORWARD";
+                infoLogPublisher.publish(msg);
+
+                firstTimeRotate = true;
+            }
+
+            if(searchController.cnmIsAlternating()) { goalLocation.theta = currentLocation.theta - (M_PI/6); }
+            else { goalLocation.theta = currentLocation.theta + (M_PI/6); }
+
+            goalLocation.x = currentLocation.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
+            goalLocation.y = currentLocation.y + (AVOIDOBSTDIST * (sin(goalLocation.theta)));
 
             stateMachineState = STATE_MACHINE_ROTATE;
 
             cnmAvoidObstacle = false;
-            cnmSeenAnObstacle = false;
-        }
-        else
-        {
-            sendDriveCommand(0.0, 0.2);
-            return;
         }
 
-    }
-    //no matter what we receive from obstacle
-    else if ((!targetDetected || targetCollected) && (message->data > 0))
-    {
-        if(cnmInitialPositioningComplete)
-        {
-            if (message->data == 1 || message->data == 2 || message->data == 3)
-            {
-                //start obstacle timer
-                cnmObstacleAvoidanceTimer.start();
-
-                //if you see something stop
-                sendDriveCommand(0.0, 0.0);
-
-                //if this is the first time we are acknowledging an obstacle
-                if(!cnmSeenAnObstacle)
-                {
-                    std_msgs::String msg;
-                    msg.data = "Obstacle Detected";
-                    infoLogPublisher.publish(msg);
-                    cnmSeenAnObstacle = true;
-                }
-
-                return;
-                //stateMachineState = STATE_MACHINE_ROTATE;
-            }
-        }
-    }
-    //if we saw a target but no longer see one
-    else if (cnmSeenAnObstacle && (!targetDetected || targetCollected) && (message->data == 0))
-    {
-        cnmSeenAnObstacle = false;
-        cnmAvoidObstacle = false;
-
-        std_msgs::String msg;
-        msg.data = "Obstacle Moved, Continuing Search Pattern";
-        infoLogPublisher.publish(msg);
-
-        if(!targetCollected)
-        {
-            int position = searchController.cnmGetSearchPosition();
-            double distance = searchController.cnmGetSearchDistance();
-
-            stringstream ss;
-            ss << "Traveling to point " << position << " in pattern:  " << distance;
-            msg.data = ss.str();
-            infoLogPublisher.publish(msg);
-        }
-        else
-        {
-            msg.data = "Returning to center";
-            infoLogPublisher.publish(msg);
-        }
-
-        cnmObstacleAvoidanceTimer.stop();
-
-        // switch to transform state to trigger collision avoidance
-        stateMachineState = STATE_MACHINE_ROTATE;
+        firstTimeSeeObst = true;
     }
 
     // the front ultrasond is blocked very closely. 0.14m currently
@@ -985,7 +952,7 @@ void mapAverage()
 //-----------------------------------
 void InitComp()
 {
-    dropOffController.setSearch(&searchController);  //CNMAdded
+    //dropOffController.setSearch(&searchController);  //CNMAdded
 
     //This is original code from main, moved to a utility function.
 
@@ -1407,7 +1374,7 @@ bool CNMReverseProtocol()
 
 //CNM TIMER FUNCTIONS
 //-----------------------------------
-void CNMAvoidance(const ros::TimerEvent &event)
+void CNMAvoidObstacle(const ros::TimerEvent &event)
 {
 
     std_msgs::String msg;
@@ -1416,7 +1383,7 @@ void CNMAvoidance(const ros::TimerEvent &event)
 
     cnmAvoidObstacle = true;
 
-    cnmObstacleAvoidanceTimer.stop();
+    cnmAvoidObstacleTimer.stop();
 }
 
 void CNMInitPositioning(const ros::TimerEvent &event)
@@ -1449,14 +1416,14 @@ void CNMAvoidOtherTargets(const ros::TimerEvent& event)
     cnmAvoidTargets = false;
     cnmRotate = false;
 
-    cnmAvoidOtherTargetTimer.stop();
+    cnmAvoidObstacleTimer.stop();
 
     //select new heading in front
     goalLocation.theta = currentLocation.theta;
 
     //select new position 25 cm from current location
-    goalLocation.x = currentLocation.x + (0.35 * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + (0.35 * sin(goalLocation.theta));
+    goalLocation.x = currentLocation.x + (AVOIDTARGDIST * cos(goalLocation.theta));
+    goalLocation.y = currentLocation.y + (AVOIDTARGDIST * sin(goalLocation.theta));
 
     stateMachineState = STATE_MACHINE_ROTATE;
 }
@@ -1508,3 +1475,5 @@ void CNMReverseTimer(const ros::TimerEvent& event)
 
     cnmReverseTimer.stop();
 }
+
+
