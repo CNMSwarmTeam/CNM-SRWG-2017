@@ -29,6 +29,8 @@ class SearchController
     int cnmGetSearchPosition();
     double cnmGetSearchDistance();
 
+    bool cnmIsAlternating() { return reverseSearch; }
+
     // performs search pattern
     geometry_msgs::Pose2D search(geometry_msgs::Pose2D currentLocation);
 
@@ -37,6 +39,8 @@ class SearchController
     geometry_msgs::Pose2D continueInterruptedSearch(geometry_msgs::Pose2D currentLocation, geometry_msgs::Pose2D oldGoalLocation);
 
     bool getCenterSeen(){ return cnmCenterSeen; }
+
+    void obstacleWasAvoided();
 
   private:
     //VARIABLES
@@ -51,6 +55,7 @@ class SearchController
     //--------------------------------------
     bool cnmCenterSeen;
     bool cnmHasReset;
+    bool avoidedObstacle;
 
     //PRIMITIVES
     //--------------------------------------
@@ -61,6 +66,8 @@ class SearchController
     double searchDist;
     double searchCounter;
     double cnmSearchCounterDistance;
+
+    bool reverseSearch;
 
     int cnmNumRotations;
 
