@@ -36,7 +36,7 @@ public:
     void setCenterDist(float dist) {distanceToCenter = dist;}
     void setDataLocations(geometry_msgs::Pose2D center, geometry_msgs::Pose2D current, float sync);
 
-    void setSearch(SearchController *cont) { DropOffSearch = cont; }
+    //void setSearch(SearchController *cont) { DropOffSearch = cont; }
 
     bool cnmInPosition;
 
@@ -81,7 +81,7 @@ private:
     float addSpinSize;
     float addSpinSizeAmmount;
 
-    SearchController *DropOffSearch;
+    //SearchController DropOffSearch;
 
     float searchVelocity;
 
