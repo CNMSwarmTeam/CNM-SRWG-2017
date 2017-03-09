@@ -172,8 +172,14 @@ void targetDetectedReset(const ros::TimerEvent& event);
 float CenterXCoordinates[500];
 float CenterYCoordinates[500];
 
-geometry_msgs::Pose2D cnmCenterLocation;
+float mapCenterXCoordinates[500];
+float mapCenterYCoordinates[500];
 
+float mapOdomXCoordintes[500];
+float mapOdomYCoordinates[500];
+
+geometry_msgs::Pose2D cnmCenterLocation;
+geometry_msgs::Pose2D avgCenterRotation;
 
 double CENTEROFFSET = .95;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
@@ -281,6 +287,8 @@ void CNMTargetAvoid();
 bool CNMCentered(double count, double countRight, double countLeft);
 
 void CNMAVGCenter(geometry_msgs::Pose2D currentLocation);
+
+void CNMAVGMap();
 
 //Timer Functions/Callbacks
 void CNMAvoidObstacle(const ros::TimerEvent& event);    //Timer Function(when timer fires, it runs this code)
@@ -677,6 +685,8 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 if(!cnmReverse && cnmInitialPositioningComplete) { cnmReverse = true; }
 
                 cnmFinishedCenteringTimer.start();
+
+                searchController.doAnotherOctagon();
             }
 
             //FINAL STEPS
@@ -691,7 +701,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         if (centerSeen && targetCollected && !cnmAvoidTargets && !cnmReverse)
         {
             stateMachineState = STATE_MACHINE_TRANSFORM;
-            goalLocation = centerLocation;
+            goalLocation = cnmCenterLocation;
 
             if(countTargets > 1) { sendDriveCommand(0.0, 0.0); }
 
@@ -1139,8 +1149,7 @@ bool CNMCentered(double count, double countRight, double countLeft)
 }
 
 void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
-{
-
+{   
     std_msgs::String msg;
     msg.data = "Averaging Center Location";
     infoLogPublisher.publish(msg);
@@ -1174,8 +1183,8 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
             avgY += CenterYCoordinates[i];
         }
 
-        cnmCenterLocation.x = (avgX / index);
-        cnmCenterLocation.y = (avgY / index);
+        avgX = (avgX / index);
+        avgY = (avgY / index);
     }
     else
     {
@@ -1187,14 +1196,79 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
 
         //UPDATE CENTER LOCATION
         //---------------------------------------------
-        cnmCenterLocation.x = (avgX / ASIZE);
-        cnmCenterLocation.y = (avgY / ASIZE);
+        avgX = (avgX / ASIZE);
+        avgY = (avgY / ASIZE);
     }
 
+    //avgX += currentLocationMap.x;
+    //avgY += currentLocationMap.y;
+
+    cnmCenterLocation.x = (avgX / 2);
+    cnmCenterLocation.y = (avgY / 2);
 
     //send to searchController
     //---------------------------------------------
     searchController.setCenterLocation(cnmCenterLocation);
+}
+
+void CNMAVGMap()
+{
+    static bool reached500 = false;
+    static int index = 0;
+    const int ASIZE = 500;
+
+    mapCenterXCoordinates[index] = currentLocationMap.x;
+    mapCenterYCoordinates[index] = currentLocationMap.y;
+
+    mapOdomXCoordintes[index] = currentLocation.x;
+    mapOdomYCoordinates[index] = currentLocation.y;
+
+    index++;
+
+    if(!reached500 && index == ASIZE + 1) { reached500 = true; }
+
+    float mapAvgX = 0;
+    float mapAvgY = 0;
+    float odomAvgX = 0;
+    float odomAvgY = 0;
+
+    if(!reached500)
+    {
+        for(int i = 0; i < index; i++)
+        {
+            mapAvgX += mapCenterXCoordinates[i];
+            mapAvgY += mapCenterYCoordinates[i];
+
+            odomAvgX += mapOdomXCoordintes[i];
+            odomAvgY += mapOdomYCoordinates[i];
+        }
+
+        mapAvgX = (mapAvgX / index);
+        mapAvgY = (mapAvgY / index);
+
+        odomAvgX = (odomAvgX / index);
+        odomAvgY = (odomAvgY / index);
+    }
+    else
+    {
+        for(int i = 0; i < ASIZE; i++)
+        {
+            mapAvgX += mapCenterXCoordinates[i];
+            mapAvgY += mapCenterYCoordinates[i];
+
+            odomAvgX += mapOdomXCoordintes[i];
+            odomAvgY += mapOdomYCoordinates[i];
+        }
+
+        mapAvgX = (mapAvgX / ASIZE);
+        mapAvgY = (mapAvgY / ASIZE);
+
+        odomAvgX = (odomAvgX / ASIZE);
+        odomAvgY = (odomAvgY / ASIZE);
+    }
+
+    avgCenterRotation.x = ((mapAvgX + odomAvgX) / 2);
+    avgCenterRotation.y = ((mapAvgY + odomAvgY) / 2);
 }
 
 //INITIALIZE COMPONENTS
@@ -1235,6 +1309,8 @@ void CNMFirstBoot()
         infoLogPublisher.publish(msg);
 
         firstTimeInBoot = false;
+
+        CNMAVGMap();
 
         //START TIMER
         cnmInitialPositioningTimer.start();
@@ -1421,6 +1497,13 @@ bool CNMTransformCode()
             ss << "Traveling to point " << position << " in pattern:  " << distance;
             msg.data = ss.str();
             infoLogPublisher.publish(msg);
+
+            CNMAVGMap();
+
+            if(searchController.cnmGetSearchPosition() == 9 && searchController.getHasDoneRotation())
+            {
+                CNMAVGCenter(avgCenterRotation);
+            }
         }
     }
 
@@ -1757,3 +1840,4 @@ void CNMForwardInitTimerDone(const ros::TimerEvent& event)
     cnmFirstBootProtocol = false;
     cnmInitialPositioningComplete = true;
 }
+
