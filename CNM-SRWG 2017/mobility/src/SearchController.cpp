@@ -5,8 +5,6 @@
 double const MIN_DIST_SEARCH = 1.25;
 double const MAX_DIST_SEARCH = 3.0;
 
-bool hasDoneRotation;
-
 int numTimesAvoidedObst = 0;
 int minNumRotations;
 
@@ -36,6 +34,8 @@ SearchController::SearchController()
     hasDoneRotation = false;
     reverseSearch = false;
     avoidedObstacle = false;
+
+    doneOneFullRotation = false;
 }
 
 geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLocation)
@@ -80,6 +80,11 @@ geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLoca
     }
 
     cnmNumRotations++;
+
+    if(hasDoneRotation == true)
+    {
+        doneOneFullRotation = true;
+    }
 
     //RESET variable
     avoidedObstacle = false;
