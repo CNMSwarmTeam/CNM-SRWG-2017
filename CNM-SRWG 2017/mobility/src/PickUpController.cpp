@@ -20,7 +20,7 @@ PickUpController::PickUpController() {
 PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
     //threshold distance to be from the target block before attempting pickup
-    float targetDist = 0.245; //meters
+    float targetDist = 0.22; //meters
 
 
     /*PickUpResult result;
@@ -52,7 +52,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         //if in a counting state and has been counting for 1 second
         else if (Td > 1 && Td < 2.5)
         {
-            result.cmdVel = -0.2;
+            result.cmdVel = 0.1;    //-0.2
             result.angleError = 0.0;
         }
     }
