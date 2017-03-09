@@ -42,6 +42,10 @@ class SearchController
 
     void obstacleWasAvoided();
 
+    bool getHasDoneRotation() { return hasDoneRotation; }
+
+    bool doAnotherOctagon() { doneOneFullRotation = false; }
+
   private:
     //VARIABLES
     //--------------------------------------
@@ -56,6 +60,9 @@ class SearchController
     bool cnmCenterSeen;
     bool cnmHasReset;
     bool avoidedObstacle;
+
+    bool hasDoneRotation;
+    bool doneOneFullRotation;
 
     //PRIMITIVES
     //--------------------------------------
