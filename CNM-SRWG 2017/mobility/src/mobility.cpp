@@ -183,7 +183,7 @@ geometry_msgs::Pose2D avgCenterRotation;
 
 double CENTEROFFSET = .95;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
-double AVOIDTARGDIST = .35;                                 //distance to drive for avoiding targets
+double AVOIDTARGDIST = .45;                                 //distance to drive for avoiding targets
 
 //Central collection point has been seen (aka the nest)
 bool centerSeen = false;                                    //If we CURRENTLY see the center
@@ -702,9 +702,6 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         {
             stateMachineState = STATE_MACHINE_TRANSFORM;
             goalLocation = cnmCenterLocation;
-
-            if(countTargets > 1) { sendDriveCommand(0.0, 0.0); }
-
         }
 
         // end found target and looking for center tags
@@ -716,16 +713,27 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             && !centerSeen)
     {
 
-        if(cnmReverse) { cnmReverse = false; }
+        if(cnmReverse  && !centerSeen)
+        {
+            cnmReverse = false;
+            targetDetected = false;
 
-        targetDetected = true;
+            if(message->detections.size() > 0)
+            {
+                cnmReverse = true;
+            }
+        }
+        else
+        {
+            targetDetected = true;
 
-        //pickup state so target handler can take over driving.
-        //---------------------------------------------
-        stateMachineState = STATE_MACHINE_PICKUP;
-        result = pickUpController.selectTarget(message);
+            //pickup state so target handler can take over driving.
+            //---------------------------------------------
+            stateMachineState = STATE_MACHINE_PICKUP;
+            result = pickUpController.selectTarget(message);
 
-        CNMTargetPickup(result);
+            CNMTargetPickup(result);
+        }
     }
 
     //CNM ADDED: if we see a target and have already picked one up
@@ -1068,8 +1076,8 @@ void CNMTargetAvoid()
             msg.data = "Avoiding Blocks; Carrying Target.  Starting Timer";
             infoLogPublisher.publish(msg);
 
-            if(searchController.cnmIsAlternating()) { goalLocation.theta = currentLocation.theta - (M_PI/3); }
-            else { goalLocation.theta = currentLocation.theta + (M_PI/3); }
+            if(searchController.cnmIsAlternating()) { goalLocation.theta = currentLocation.theta - (M_PI/6); }
+            else { goalLocation.theta = currentLocation.theta + (M_PI/6); }
 
             //select new position 25 cm from current location
             goalLocation.x = currentLocation.x + (AVOIDTARGDIST * cos(goalLocation.theta));
@@ -1194,8 +1202,6 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
             avgY += CenterYCoordinates[i];
         }
 
-        //UPDATE CENTER LOCATION
-        //---------------------------------------------
         avgX = (avgX / ASIZE);
         avgY = (avgY / ASIZE);
     }
@@ -1203,8 +1209,10 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
     //avgX += currentLocationMap.x;
     //avgY += currentLocationMap.y;
 
-    cnmCenterLocation.x = (avgX / 2);
-    cnmCenterLocation.y = (avgY / 2);
+    //UPDATE CENTER LOCATION
+    //---------------------------------------------
+    cnmCenterLocation.x = (avgX);
+    cnmCenterLocation.y = (avgY);
 
     //send to searchController
     //---------------------------------------------
@@ -1498,9 +1506,9 @@ bool CNMTransformCode()
             msg.data = ss.str();
             infoLogPublisher.publish(msg);
 
-            CNMAVGMap();
+            if(cnmHasCenterLocation) { CNMAVGMap(); }
 
-            if(searchController.cnmGetSearchPosition() == 9 && searchController.getHasDoneRotation())
+            if(searchController.cnmGetSearchPosition() == 9 && searchController.getHasDoneRotation()  && cnmHasCenterLocation)
             {
                 CNMAVGCenter(avgCenterRotation);
             }
