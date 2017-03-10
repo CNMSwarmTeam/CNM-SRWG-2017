@@ -1382,11 +1382,15 @@ bool CNMPickupCode()
             result.pickedUp = false;
             stateMachineState = STATE_MACHINE_ROTATE;
 
-            goalLocation.theta = atan2(centerLocationOdom.y - currentLocation.y, centerLocationOdom.x - currentLocation.x);
+            goalLocation.theta = atan2(cnmCenterLocation.y - currentLocation.y, cnmCenterLocation.x - currentLocation.x);
+            //goalLocation.theta = atan2(centerLocationOdom.y - currentLocation.y, centerLocationOdom.x - currentLocation.x);
 
             // set center as goal position
-            goalLocation.x = centerLocationOdom.x = 0;
-            goalLocation.y = centerLocationOdom.y;
+            goalLocation.x = cnmCenterLocation.x;
+            goalLocation.y = cnmCenterLocation.y;
+
+            //goalLocation.x = centerLocationOdom.x = 0;
+            //goalLocation.y = centerLocationOdom.y;
 
             // lower wrist to avoid ultrasound sensors
             std_msgs::Float32 angle;
@@ -1848,4 +1852,3 @@ void CNMForwardInitTimerDone(const ros::TimerEvent& event)
     cnmFirstBootProtocol = false;
     cnmInitialPositioningComplete = true;
 }
-
