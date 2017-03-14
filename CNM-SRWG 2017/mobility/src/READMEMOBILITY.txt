@@ -95,6 +95,32 @@ EDITED BY:  Jeff Schlindwein
             - Uses sendDriveCommand
         - Continues to Rotate 30 Degrees, Drive, and Reset (LINES: 969 - 1003)
 
+  + Reverse Behavior
+    - REWORKED REVERSE BEHAVIOR
+      + Changed Timer Times/Handlers
+      + Added Function
+        - Instead of changing the state of a bool, made a function to do all the work
+          + CNMStartReversing (VOID) - (PROTOTYPE: LINE 313; DEFINITION: LINE 1567)
+            - Kicks off initial timers and states
+        - ADDED cnmReverseReset (VOID) - PROTOTYPE: LINE 314; DEFINITION: LINE 1548)
+          + Resets all variables to their default state
+          + Useful for stopping and starting reverse behavior   
+        - Still FORCES rover to reverse (no elegant solution) LINE: 507
+
+  + HAVE HEAVILY MODIFIED TARGET HANDLER
+    - Now counts number of targets it sees (not just center tags)
+    - Figues out how many targets are on the left and right
+      + Uses this info for choosing which way to turn for avoidance
+  
+  + Center Finding Behavior
+    - Used DropOff Code for squaring the rover up to the nest
+      + Code is in CNMCentered (BOOL) - (PROTOTYPE: LINE 323; DEFINITION: LINE 1632)
+        - returns true only if it is squared up
+      + If CNMCentered returns true
+        - projects center point
+        - stores it in AVGCenter
+      + Reverses
+
   + Target Avoidance (STILL W.I.P.)
     - Target Avoidance Still Needs LOVE
     ---TARGET AVOIDANCE NOTES---
@@ -107,11 +133,6 @@ EDITED BY:  Jeff Schlindwein
       + CURRENT PROGRESS:
         - WORKING BEHAVIOR:
           + Rover has target and Dropping Off
-     - HAVE HEAVILY MODIFIED TARGET HANDLER
-      + Now counts number of targets it sees (not just center tags)
-      + Figues out how many targets are on the left and right
-        - Uses this info for choosing which way to turn
-      + 
       
 --------3/4/2017--------
 EDITED BY:  Jeff Schlindwein, Steve Lindsey, Kaily Young, Juan Rueda, Paul Ward
