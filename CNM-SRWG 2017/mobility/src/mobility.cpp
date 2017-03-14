@@ -1480,7 +1480,7 @@ void CNMFirstBoot()
             {
                 static bool firstInWait = true;
 
-                if(firstInWait = true)
+                if(firstInWait)
                 {
                     std_msgs::String msg;
                     msg.data = "Finishing 180, waiting before starting search";
