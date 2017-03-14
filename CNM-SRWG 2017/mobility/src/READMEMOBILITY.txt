@@ -4,7 +4,7 @@ MOBILITY
 EDITED BY:  Jeff Schlindwein
 
 - Commented and Re-Commented Code
-  + Most variables, functions, and timers have all be revisited with comments
+  + Most variables, functions, and timers have all been revisited with comments
     - Lines 190 - 356
   + ALL Functions Have Been Organized an Labeled Appropriately
     - Lines 1080 - 2113
@@ -70,7 +70,7 @@ EDITED BY:  Jeff Schlindwein
             - if it receives too many obstacle calls
               + try going to the next point
           + Check to see if we are alternating (AKA Searching Left or Searching Right)
-            - This changes how the Rover Responds the obstacle
+            - This changes how the Rover Responds to the obstacle
             - Will always try to rotate INWARDS based on its search pattern
               + Derives a point based on this information to rotate to
         - Once It has rotated
@@ -110,7 +110,7 @@ EDITED BY:  Jeff Schlindwein
   + HAVE HEAVILY MODIFIED TARGET HANDLER
     - Now counts number of targets it sees (not just center tags)
     - Figues out how many targets are on the left and right
-      + Uses this info for choosing which way to turn for avoidance
+      + Uses this info for choosing which way to turn for target avoidance (BELOW)
   
   + Center Finding Behavior
     - Used DropOff Code for squaring the rover up to the nest
@@ -120,6 +120,12 @@ EDITED BY:  Jeff Schlindwein
         - projects center point
         - stores it in AVGCenter
       + Reverses
+    - Has 2 seperate member functions
+      + CNMFirstSeenCenter (VOID) - (PROTOTYPE:  LINE 316; DEFINITION: LINE 1696)
+        - Initial Center Find        
+      + CNMRefindCenter (VOID) - (PROTOTYPE: LINE 317; DEFINITION: LINE 1729)
+        - Refind Center
+    - BOTH member functions act the same currently, but can be manipulated to do seperate things
 
   + Target Avoidance (STILL W.I.P.)
     - Target Avoidance Still Needs LOVE
@@ -133,7 +139,9 @@ EDITED BY:  Jeff Schlindwein
       + CURRENT PROGRESS:
         - WORKING BEHAVIOR:
           + Rover has target and Dropping Off
-      
+
+CURRENT END OF FILE:  2113
+
 --------3/4/2017--------
 EDITED BY:  Jeff Schlindwein, Steve Lindsey, Kaily Young, Juan Rueda, Paul Ward
 
