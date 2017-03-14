@@ -107,10 +107,34 @@ EDITED BY:  Jeff Schlindwein
           + Useful for stopping and starting reverse behavior   
         - Still FORCES rover to reverse (no elegant solution) LINE: 507
 
-  + HAVE HEAVILY MODIFIED TARGET HANDLER
+  + HAVE HEAVILY MODIFIED TARGET HANDLER LINE 642
     - Now counts number of targets it sees (not just center tags)
     - Figues out how many targets are on the left and right
       + Uses this info for choosing which way to turn for target avoidance (BELOW)
+    - Works For Specific States
+      + Roving and Looking For Tags
+        - Counts center tags, how many, and reacts (NOT NEW)
+        - Counts target tags, how many, and reacts (NEW)
+      + Responds to the center tags
+        - Squares p
+        - Plots center point
+        - Does reverse behavior
+      + If sees a tag and not currently carrying one
+        - WORK IN PROGRESS!!!!
+        - If we see a target
+          + Behavior is dependant on several factors
+            - Have a tag already
+              + Avoid
+            - Haven't found the center
+              + Avoid
+          + If it can pick it up
+            - Tell the rover it can pick it up
+            - Switch States
+            - Built Member Function CNMTargetPickup (VOID) - (PROTOTYPE: LINE ; DEFINITION: LINE )
+              + Sets gripper and wrist positions based on results of pickup attempts
+                - Set from pickUpController
+              + Is passed the pickup result to perform task
+        - CHECK TARGET AVOIDANCE FOR FURTHER INFORMATION ON TARGET HANDLER
   
   + Center Finding Behavior
     - Used DropOff Code for squaring the rover up to the nest
