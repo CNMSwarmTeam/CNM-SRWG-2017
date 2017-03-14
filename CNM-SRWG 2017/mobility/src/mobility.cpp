@@ -64,8 +64,6 @@ geometry_msgs::Pose2D mapLocation[mapHistorySize]; //An array in which to store 
 std_msgs::String msg;                           //std_msgs shares current STATE_MACHINE STATUS in mobility state machine
 geometry_msgs::Twist velocity;                  //Linear and Angular Velocity Expressed as a Vector
 
-//Do not know what the map and odom locations do ATM - JMS
-
 //Controller Class Objects
 //--------------------------------------------
 PickUpController pickUpController;
@@ -201,7 +199,10 @@ float searchVelocity = 0.2;                                 // meters/second  OR
 
 //First Boot Boolean
 bool cnmFirstBootProtocol = true;
+bool cnmHasWaitedInitialAmount = false;
 bool cnmInitialPositioningComplete = false;
+bool cnmHasMovedForward = false;
+bool cnmHasTurned180 = false;
 
 //Variables for MobilityStateMachine:  MOVED HERE FOR SCOPE
 float rotateOnlyAngleTolerance = 0.5;                       //jms chnaged from .4
@@ -229,16 +230,20 @@ bool cnmRotate = false;
 ros::Timer cnmAvoidObstacleTimer;
 ros::Duration cnmAvoidObstacleTimerTime(10);
 
-//Initial 180 Timer
+//First Boot Timers
 //---------------------------------------------
-ros::Timer cnmInitialPositioningTimer;
-ros::Duration cnmInitialPositionTimerTime(5);      //time in seconds
 
-//Centering Timer (used to center rover and find more accurate point to
-    //translate centers position to
-//---------------------------------------------
+//Waits 10 seconds and Drives Forward
+ros::Timer cnmInitialPositioningTimer;
+ros::Duration cnmInitialPositionTimerTime(10);      //time in seconds
+
+//Waits 10 seconds and Turns 180
 ros::Timer cnmForwardTimer;
-ros::Duration cnmForwardTimerTime(4);
+ros::Duration cnmForwardTimerTime(10);
+
+//Waits 10 Seconds and triggers the robot to continue search
+ros::Timer cnmInitialWaitTimer;
+ros::Duration cnmInitialWaitTime(10);
 
 //Target Avoidance Timers
 //---------------------------------------------
@@ -268,6 +273,7 @@ ros::Duration cnmTurn180TimerTime(2.5);
 //---------------------------------------------
 ros::Timer cnmFinishedCenteringTimer;
 ros::Duration cnmFinishedCenteringTimerTime(4);
+
 
 ros::Timer cnmAfterPickUpTimer;
 ros::Duration cnmAfterPickUpTimerTime(2);
@@ -316,6 +322,7 @@ void CNMForwardInitTimerDone(const ros::TimerEvent& event);
 void CNMTryAgainCentering(const ros::TimerEvent& event);
 void cnmWaitToResetWG(const ros::TimerEvent& e);
 void cnmFinishedPickUpTime(const ros::TimerEvent& e);
+void CNMInitialWait(const ros::TimerEvent& e);
 
 //MAIN
 //--------------------------------------------
@@ -394,6 +401,9 @@ int main(int argc, char **argv)
     cnmForwardTimer = mNH.createTimer(cnmForwardTimerTime, CNMForwardInitTimerDone, true);
     cnmForwardTimer.stop();
 
+    cnmInitialWaitTimer = mNH.createTimer(cnmInitialWaitTime, CNMInitialWait, true);
+    cnmInitialWaitTimer.stop();
+
     //AVOIDING TARGETS IF CARYYING ONE
     cnmAvoidOtherTargetTimer = mNH.createTimer(cnmAvoidOtherTargetTimerTime, CNMAvoidOtherTargets, true);
     cnmAvoidOtherTargetTimer.stop();
@@ -441,39 +451,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
     {
 
         //cnmFirstBootProtocol runs the first time the robot is set to autonomous mode (2 || 3)
-        if(cnmFirstBootProtocol)
-        {           
-
-            static bool firstTimeIn = true;
-
-            if(firstTimeIn)
-            {
-                goalLocation = currentLocation;
-                firstTimeIn = false;
-            }
-
-            //CNMFirstBoot function takes the current location and forces the robot to run 180 degrees
-                // and drive out from the center.  This helps prevent a lot of issues we had last year
-                // with robots bunching up around the center
-            CNMFirstBoot();
-
-            if(!cnmInitDriveFor)
-            {
-                //START TIMER
-                cnmInitialPositioningTimer.start();
-            }
-            else
-            {
-                cnmForwardTimer.start();
-            }
-        }
-
-        //TRIGGERED WHEN SEEING THE CENTER OR AFTER TAG DROP OFF
-        //---------------------------------------------
-        //if(cnmReverse)
-        //{
-            //if(CNMReverseProtocol()) { return; }
-        //}
+        if(cnmFirstBootProtocol) { CNMFirstBoot(); }
 
         if(!cnmReverseDone && cnmReverse) { sendDriveCommand(-0.2, 0.0); return; }
 
@@ -581,6 +559,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
 
         } /* end of switch() */
     }
+
     // mode is NOT auto
     else
     {
@@ -1449,7 +1428,7 @@ void CNMFirstBoot()
 {    
     static bool firstTimeInBoot = true;
 
-
+    //FIRST TIME IN THIS FUNCTION
     if(firstTimeInBoot)
     {
         //Print a message to the info box letting us know the robot recognizes the state change
@@ -1457,14 +1436,15 @@ void CNMFirstBoot()
         msg.data = "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
         infoLogPublisher.publish(msg);
 
+        goalLocation = currentLocation;
+
         firstTimeInBoot = false;
 
-        CNMAVGMap();
-
-        //START TIMER
+        //START TIMER to move forward
         cnmInitialPositioningTimer.start();
     }
 
+    //IF WE SEE CENTER, BREAK EVERYTHING
     if(centerSeen)
     {
         cnmFirstBootProtocol = false;
@@ -1473,6 +1453,68 @@ void CNMFirstBoot()
         cnmInitialPositioningTimer.stop();
         cnmForwardTimer.stop();
 
+        goalLocation = currentLocation;
+    }
+
+    //OTHERWISE-------
+
+    //If we have waited the initial timer out, and are driving forward
+    else if(cnmHasWaitedInitialAmount)
+    {
+        //If we HAVE moved Forward and are turning 180
+        if(cnmHasMovedForward)
+        {
+            static bool firstIn180 = true;
+
+            if(firstIn180)
+            {
+                std_msgs::String msg;
+                msg.data = "Finishing 180, waiting before starting search";
+                infoLogPublisher.publish(msg);
+
+                firstIn180 = false;
+            }
+
+            //IF we HAVEN'T finished turning 180
+            if(!cnmHasTurned180)
+            {
+                static bool firstInWait = true;
+
+                if(firstInWait = true)
+                {
+                    std_msgs::String msg;
+                    msg.data = "Finishing 180, waiting before starting search";
+                    infoLogPublisher.publish(msg);
+                    firstInWait = false;
+                }
+
+                //call last wait timer
+                cnmInitialWaitTimer.start();
+            }
+
+        }
+
+        //IF we haven't finished moving forward yet
+        else
+        {
+            static bool firstIn = true;
+
+            if(firstIn)
+            {
+                std_msgs::String msg;
+                msg.data = "Starting Timer To Turn 180";
+                infoLogPublisher.publish(msg);
+                firstIn = false;
+            }
+
+            //Call forward timer, once timer fires, assumes we are done driving forward
+            cnmForwardTimer.start();
+        }
+    }
+
+    else
+    {
+        sendDriveCommand(0.0, 0.0);
         goalLocation = currentLocation;
     }
 }
@@ -1742,6 +1784,79 @@ void CNMReverseReset()
 
 //CNM TIMER FUNCTIONS
 //-----------------------------------
+
+//INITIAL TIMERS
+
+void CNMInitPositioning(const ros::TimerEvent &event)
+{
+    std_msgs::String msg;
+    msg.data = "Initial Wait Time Complete, Driving Forward";
+    infoLogPublisher.publish(msg);
+
+    goalLocation.theta = currentLocation.theta;
+
+    //select position 25 cm from the robots location before attempting to go into search pattern
+    goalLocation.x = currentLocation.x + (.45 * cos(goalLocation.theta));
+    goalLocation.y = currentLocation.y + (.45 * sin(goalLocation.theta));
+
+    cnmHasWaitedInitialAmount = true;
+}
+
+void CNMForwardInitTimerDone(const ros::TimerEvent& event)
+{
+
+    std_msgs::String msg;
+    msg.data = "Finished Driving; Turning 180";
+    infoLogPublisher.publish(msg);
+
+    cnmHasMovedForward = true;
+
+    //set NEW heading 180 degrees from current theta
+    goalLocation.theta = currentLocation.theta + M_PI;
+
+    //APPROX 45 cm away
+    goalLocation.x = currentLocation.x + (.45 * cos(goalLocation.theta));
+    goalLocation.y = currentLocation.y + (.45 * sin(goalLocation.theta));
+
+    cnmForwardTimer.stop();
+}
+
+void CNMInitialWait(const ros::TimerEvent &e)
+{
+
+    std_msgs::String msg;
+    msg.data = "Finished 180, Starting Search Pattern";
+    infoLogPublisher.publish(msg);
+
+    cnmHasTurned180 = true;
+    cnmInitialPositioningComplete = true;
+    cnmFirstBootProtocol = false;
+
+    stringstream ss;
+
+    //Continue an interrupted search pattern
+    //---------------------------------------------
+    goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
+
+    //ROTATE!!!
+    //---------------------------------------------
+    stateMachineState = STATE_MACHINE_ROTATE;
+
+    int position = searchController.cnmGetSearchPosition();
+
+    double distance = searchController.cnmGetSearchDistance();
+
+    //SPIT OUT NEXT POINT AND HOW FAR OUT WE ARE GOING
+    //---------------------------------------------
+    ss << "Traveling to point " << position << " in pattern:  " << distance;
+    msg.data = ss.str();
+    infoLogPublisher.publish(msg);
+
+    cnmInitialWaitTimer.stop();
+}
+
+//OBSTACLE TIMERS
+
 void CNMAvoidObstacle(const ros::TimerEvent &event)
 {
 
@@ -1766,31 +1881,7 @@ void CNMAvoidObstacle(const ros::TimerEvent &event)
     }
 }
 
-void CNMInitPositioning(const ros::TimerEvent &event)
-{
-    std_msgs::String msg;
-    msg.data = "First Boot Timer Finished";
-    infoLogPublisher.publish(msg);
-
-    if(!cnmHasCenterLocation)
-    {
-        msg.data = "Did not locate center, triggering shortened search distance";
-        infoLogPublisher.publish(msg);
-
-        searchController.setCenterSeen(false);
-    }
-
-    //set initial heading forward from initial theta
-    goalLocation.theta = currentLocation.theta;
-
-    //select position ~20 cm from origin before attempting to go into search pattern
-    goalLocation.x = (0.35 * cos(goalLocation.theta));
-    goalLocation.y = (0.35 * sin(goalLocation.theta));
-
-    stateMachineState = STATE_MACHINE_TRANSFORM;
-
-    cnmInitDriveFor = true;
-}
+//TARGET AVOIDANCE
 
 void CNMAvoidOtherTargets(const ros::TimerEvent& event)
 {
@@ -1827,6 +1918,60 @@ void CNMUpdateSearch(const ros::TimerEvent& event)
     }
 }
 
+//REVERSE TIMERS
+
+void CNMStartReversing()
+{
+    //Pass Info to Info Log
+    //---------------------------------------------
+    std_msgs::String msg;
+    msg.data = "STARTING REVERSE TIMER";
+    infoLogPublisher.publish(msg);
+
+    //Start First Timer
+    //---------------------------------------------
+    cnmReverseTimer.start();
+
+    //Set Variables Appropriately
+    //---------------------------------------------
+    cnmReverse = true;
+    firstReverse = false;
+    cnmReverseDone = false;
+    cnmTurn180Done = false;
+    cnmCheckTimer = 0;
+
+    //BACKUP!!!
+    //---------------------------------------------
+    sendDriveCommand(-0.2, 0);
+}
+
+void CNMReverseTimer(const ros::TimerEvent& event)
+{
+    std_msgs::String msg;
+    msg.data = "REVERSE TIMER DONE, STARTING TURN180";
+    infoLogPublisher.publish(msg);
+
+    cnmTurn180Timer.start();
+
+    //set NEW heading 180 degrees from current theta
+    goalLocation.theta = currentLocation.theta + M_PI;
+
+    double searchDist = searchController.cnmGetSearchDistance();
+
+    //select position however far away we are currently searching from the robots location before attempting to go into search pattern
+    goalLocation.x = currentLocation.x + (searchDist * cos(goalLocation.theta));
+    goalLocation.y = currentLocation.y + (searchDist * sin(goalLocation.theta));
+
+    //change robot state
+    stateMachineState = STATE_MACHINE_ROTATE;
+
+    cnmCheckTimer = 0;
+
+    cnmReverseDone = true;
+
+    cnmReverseTimer.stop();
+}
+
 void CNMTurn180(const ros::TimerEvent& event)
 {
     cnmTurn180Done = true;
@@ -1857,32 +2002,7 @@ void CNMTurn180(const ros::TimerEvent& event)
     cnmTurn180Timer.stop();
 }
 
-void CNMReverseTimer(const ros::TimerEvent& event)
-{
-    std_msgs::String msg;
-    msg.data = "REVERSE TIMER DONE, STARTING TURN180";
-    infoLogPublisher.publish(msg);
-
-    cnmTurn180Timer.start();
-
-    //set NEW heading 180 degrees from current theta
-    goalLocation.theta = currentLocation.theta + M_PI;
-
-    double searchDist = searchController.cnmGetSearchDistance();
-
-    //select position however far away we are currently searching from the robots location before attempting to go into search pattern
-    goalLocation.x = currentLocation.x + (searchDist * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + (searchDist * sin(goalLocation.theta));
-
-    //change robot state
-    stateMachineState = STATE_MACHINE_ROTATE;
-
-    cnmCheckTimer = 0;
-
-    cnmReverseDone = true;
-
-    cnmReverseTimer.stop();
-}
+//CENTERING TIMERS
 
 void CNMCenterTimerDone(const ros::TimerEvent& event)
 {
@@ -1891,45 +2011,7 @@ void CNMCenterTimerDone(const ros::TimerEvent& event)
     cnmFinishedCenteringTimer.stop();
 }
 
-void CNMForwardInitTimerDone(const ros::TimerEvent& event)
-{
-    //set NEW heading 180 degress from current theta
-    goalLocation.theta = currentLocation.theta + M_PI;
-
-    //select position 25 cm from the robots location before attempting to go into search pattern
-    goalLocation.x = currentLocation.x + (.25 * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + (.25 * sin(goalLocation.theta));
-
-    stateMachineState = STATE_MACHINE_ROTATE;
-
-    cnmFirstBootProtocol = false;
-    cnmInitialPositioningComplete = true;
-}
-
-void CNMStartReversing()
-{
-    //Pass Info to Info Log
-    //---------------------------------------------
-    std_msgs::String msg;
-    msg.data = "STARTING REVERSE TIMER";
-    infoLogPublisher.publish(msg);
-
-    //Start First Timer
-    //---------------------------------------------
-    cnmReverseTimer.start();
-
-    //Set Variables Appropriately
-    //---------------------------------------------
-    cnmReverse = true;
-    firstReverse = false;
-    cnmReverseDone = false;
-    cnmTurn180Done = false;
-    cnmCheckTimer = 0;
-
-    //BACKUP!!!
-    //---------------------------------------------
-    sendDriveCommand(-0.2, 0);
-}
+//RESET TIMERS
 
 void cnmWaitToResetWG(const ros::TimerEvent &e)
 {
