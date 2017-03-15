@@ -3,6 +3,14 @@ MOBILITY
 --------3/12/2017--------
 EDITED BY: Jeff Schlindwein
 
+- MODIFIED
+  + Target/Obstacle Avoidance
+    - Reworked Rover detection for obstacle and target avoidance
+    	+ If rover see's a target AND an obstacle
+	  - Don't try and pick it up for a short while after you no longer see an obstacle
+    - Confirmed code works... need to flesh out behavior further
+    	+ Maybe if rover no longer see's obstacle and see's target?
+
 FIXED OBSERVATIONS BY:  Steve Lindsey
 
 - Observation A
