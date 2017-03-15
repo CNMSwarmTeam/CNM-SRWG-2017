@@ -2132,4 +2132,3 @@ void CNMWaitBeforeDetectObst(const ros::TimerEvent &event)
     cnmStartObstDetect = true;
     cnmTimeBeforeObstDetect.stop();
 }
-
