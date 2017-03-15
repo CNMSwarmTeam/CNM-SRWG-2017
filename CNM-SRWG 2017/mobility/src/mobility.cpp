@@ -224,6 +224,7 @@ bool cnmHasTurned180 = false;
 bool cnmAvoidObstacle = false;
 bool cnmSeenAnObstacle = false;
 bool cnmStartObstDetect = false;
+bool cnmCanCollectTags = true;                                 //Tells the rover if it can collect tags based on if it is avoiding an obst
 
 //Variables for PickUp
 
@@ -241,64 +242,64 @@ int cnmCheckTimer = 0;
 bool cnmAvoidTargets = false;
 bool cnmRotate = false;
 
-//Obstacle Avoidance Timers
+
+//Times For Timers (IN SECONDS)
 //---------------------------------------------
+ros::Duration cnm2SecTime(2);
+ros::Duration cnm3SecTime(3);
+ros::Duration cnm4SecTime(4);
+ros::Duration cnm6SecTime(6);
+ros::Duration cnm8SecTime(8);
+ros::Duration cnm10SecTime(10);
 
-//Waits 10 Seconds before beginning to turn away from targets
-ros::Timer cnmAvoidObstacleTimer;
-ros::Duration cnmAvoidObstacleTimerTime(10);
-
-//Waits 10 Seconds before allowing the rovers to start looking for OBST.
-ros::Timer cnmTimeBeforeObstDetect;
-ros::Duration cnmTimeBeforeObstDetectTime(10);
 
 //First Boot Timers
 //---------------------------------------------
 
 //Waits 10 seconds and Drives Forward
 ros::Timer cnmInitialPositioningTimer;
-ros::Duration cnmInitialPositionTimerTime(10);      //time in seconds
 
 //Waits 10 seconds and Turns 180
 ros::Timer cnmForwardTimer;
-ros::Duration cnmForwardTimerTime(10);
 
 //Waits 10 Seconds and triggers the robot to continue search
 ros::Timer cnmInitialWaitTimer;
-ros::Duration cnmInitialWaitTime(10);
+
+//Obstacle Avoidance Timers
+//---------------------------------------------
+
+//Waits 10 Seconds before beginning to turn away from targets
+ros::Timer cnmAvoidObstacleTimer;
+
+//Waits 10 Seconds before allowing the rovers to start looking for OBST.
+//ONLY RAN ONCE AT START UP!
+ros::Timer cnmTimeBeforeObstDetect;
+
+//Waits 6 seconds after Obstacle or target is dropped off to pick up targets
+ros::Timer cnmWaitToCollectTagsTimer;
 
 //Target Avoidance Timers
 //---------------------------------------------
 ros::Timer cnmAvoidOtherTargetTimer;
-ros::Duration cnmAvoidOtherTargetTimerTime(4);
 
 //UPDATE Search Timer (Updates Center Location)
 //---------------------------------------------
 ros::Timer cnmUpdateSearchTimer;
-ros::Duration cnmUpdateSearchTimerTime(180);
 
 //Reverse Timers
 //---------------------------------------------
 ros::Timer cnmReverseTimer;
-ros::Duration cnmReverseTimerTime(2);
-
 ros::Timer cnmWaitToResetWGTimer;
-ros::Duration cnmWaitToResetWGTimerTime(2);
 
 //180 Timers(TIED TO REVERSE)
 //---------------------------------------------
 ros::Timer cnmTurn180Timer;
-ros::Duration cnmTurn180TimerTime(2.5);
 
 //Centering Timer (used to center rover and find more accurate point to
     //translate centers position to
 //---------------------------------------------
 ros::Timer cnmFinishedCenteringTimer;
-ros::Duration cnmFinishedCenteringTimerTime(4);
-
 ros::Timer cnmAfterPickUpTimer;
-ros::Duration cnmAfterPickUpTimerTime(2);
-
 
 //CNM moved ORIGINAL CODE to utility functions
 //---------------------------------------------
@@ -355,6 +356,8 @@ void CNMTurn180(const ros::TimerEvent& event);                  //Turns 180
 //Obstacle Avoidance Timer
 void CNMAvoidObstacle(const ros::TimerEvent& event);            //Timer Function(when timer fires, it runs this code)
 void CNMWaitBeforeDetectObst(const ros::TimerEvent& event);     //When called, triggers cnmStartObstDetect to true, allowing rover to start avoiding obstacles
+
+void CNMWaitToCollectTags(const ros::TimerEvent& event);        //Handler triggers state to start collecting targets again
 
 //Target Avoidance Timer
 void CNMAvoidOtherTargets(const ros::TimerEvent& event);        //NOT BEING USED
@@ -420,63 +423,67 @@ int main(int argc, char **argv)
     //-----INITIAL CENTER FIND TIMERS-----
 
     //Waits Before Driving Forward
-    cnmInitialPositioningTimer = mNH.createTimer(cnmInitialPositionTimerTime, CNMInitPositioning, true);
+    cnmInitialPositioningTimer = mNH.createTimer(cnm10SecTime, CNMInitPositioning, true);
     cnmInitialPositioningTimer.stop();
 
     //Waits before Turning 180 Degrees
-    cnmForwardTimer = mNH.createTimer(cnmForwardTimerTime, CNMForwardInitTimerDone, true);
+    cnmForwardTimer = mNH.createTimer(cnm10SecTime, CNMForwardInitTimerDone, true);
     cnmForwardTimer.stop();
 
     //Waits before Running Interrupted Search
-    cnmInitialWaitTimer = mNH.createTimer(cnmInitialWaitTime, CNMInitialWait, true);
+    cnmInitialWaitTimer = mNH.createTimer(cnm10SecTime, CNMInitialWait, true);
     cnmInitialWaitTimer.stop();
 
     //-----REVERSE BEHAVIOR TIMERS------
 
     //Timer for mandatory reversing
-    cnmReverseTimer = mNH.createTimer(cnmReverseTimerTime, CNMReverseTimer, true);
+    cnmReverseTimer = mNH.createTimer(cnm2SecTime, CNMReverseTimer, true);
     cnmReverseTimer.stop();    
 
     //Timer for turning 180 degrees
-    cnmTurn180Timer = mNH.createTimer(cnmTurn180TimerTime, CNMTurn180, true);
+    cnmTurn180Timer = mNH.createTimer(cnm3SecTime, CNMTurn180, true);
     cnmTurn180Timer.stop();
 
     //-----DROPOFF TIMERS-----
 
     //Waits to reset Wrist/Gripper to a lowered driving state (Prevents trapping blocks under gripper)
-    cnmWaitToResetWGTimer = mNH.createTimer(cnmWaitToResetWGTimerTime, cnmWaitToResetWG, true);
+    cnmWaitToResetWGTimer = mNH.createTimer(cnm2SecTime, cnmWaitToResetWG, true);
     cnmWaitToResetWGTimer.stop();
 
     //-----PICKUP TIMERS-----
 
     //Waits a time after pickup before viewing other targets as obstacles
-    cnmAfterPickUpTimer = mNH.createTimer(cnmAfterPickUpTimerTime, cnmFinishedPickUpTime, true);
+    cnmAfterPickUpTimer = mNH.createTimer(cnm2SecTime, cnmFinishedPickUpTime, true);
     cnmAfterPickUpTimer.stop();
 
     //AVOIDING TARGETS IF CARRYING ONE
-    cnmAvoidOtherTargetTimer = mNH.createTimer(cnmAvoidOtherTargetTimerTime, CNMAvoidOtherTargets, true);
+    cnmAvoidOtherTargetTimer = mNH.createTimer(cnm4SecTime, CNMAvoidOtherTargets, true);
     cnmAvoidOtherTargetTimer.stop();
 
     //-----OBSTACLE AVOIDANCE-----
 
     //Timer for Obstacle Avoidance
-    cnmAvoidObstacleTimer = mNH.createTimer(cnmAvoidObstacleTimerTime, CNMAvoidObstacle, true);
+    cnmAvoidObstacleTimer = mNH.createTimer(cnm10SecTime, CNMAvoidObstacle, true);
     cnmAvoidObstacleTimer.stop();
 
-    //Timer to allow rovers to start detecting targets
-    cnmTimeBeforeObstDetect = mNH.createTimer(cnmTimeBeforeObstDetectTime, CNMWaitBeforeDetectObst, true);
+    //Timer to allow rovers to start detecting Obstacles
+    cnmTimeBeforeObstDetect = mNH.createTimer(cnm10SecTime, CNMWaitBeforeDetectObst, true);
     cnmTimeBeforeObstDetect.stop();
+
+    //Timer to allow rovers to start picking up tags again
+    cnmWaitToCollectTagsTimer = mNH.createTimer(cnm6SecTime, CNMWaitToCollectTags, true);
+    cnmWaitToCollectTagsTimer.stop();
 
     //-----CENTERFIND TIMERS-----
 
     //CENTERING TIMER
-    cnmFinishedCenteringTimer = mNH.createTimer(cnmFinishedCenteringTimerTime, CNMCenterTimerDone, true);
+    cnmFinishedCenteringTimer = mNH.createTimer(cnm4SecTime, CNMCenterTimerDone, true);
     cnmFinishedCenteringTimer.stop();
 
     //-----UPDATES-----
 
     //UPDATES MAP LOCATION  --NOT BEING USED, MAY DELETE--
-    cnmUpdateSearchTimer = mNH.createTimer(cnmUpdateSearchTimerTime, CNMUpdateSearch);
+//    cnmUpdateSearchTimer = mNH.createTimer(cnmUpdateSearchTimerTime, CNMUpdateSearch);
 
     tfListener = new tf::TransformListener();
     std_msgs::String msg;
@@ -779,12 +786,32 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
     {
         //Check to see if have found the nests location at all and if we currently see an obstacle
         //---------------------------------------------
-        if(cnmHasCenterLocation && !cnmSeenAnObstacle)
+        if(cnmHasCenterLocation)
         {
+
+            //If we are't allowed to pick up a tag
+            //---------------------------------------------
+            if (!cnmCanCollectTags)
+            {
+                //This code is to prevent the rover from picking up targets at inopportune moments
+                    //- Called After Successful DropOff  (So it doesn't try to pick up blocks in center)
+                    //- Called After Avoiding Obstacle   (So it doesn't try to pick up blocks being carried by other rovers)
+
+                //Ignore the tag, keep avoiding the obstacle
+                targetDetected = false;
+
+                if(stateMachineState == STATE_MACHINE_PICKUP)
+                {
+                    stateMachineState = STATE_MACHINE_TRANSFORM;
+                    pickUpController.reset();
+                }
+
+                //cnmCanCollectTags is set to true on a short timer triggered after avoiding an obstacle
+            }
 
             //If we see the center, ignore the target and back up!
             //---------------------------------------------
-            if(centerSeen)
+            else if(centerSeen)
             {
                 targetDetected = false;
 
@@ -832,7 +859,27 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             }
 
         }
+/*
+        //If we no longer see obstacle and see a target
+        //Try pickup again
+        else if((!cnmSeenAnObstacle || !cnmAvoidObstacle) && !cnmReverse)
+        {
+            if(!cnmCanCollectTags)
+            {
+                cnmCanCollectTags = true;               //reset to true
+                cnmWaitToCollectTagsTimer.stop();       //stop timer
+            }
 
+            targetDetected = true;
+
+            //pickup state so target handler can take over driving.
+            //---------------------------------------------
+            stateMachineState = STATE_MACHINE_PICKUP;
+            result = pickUpController.selectTarget(message);
+
+            CNMTargetPickup(result);
+        }
+*/
         //If not gotten the centers point, avoid the target
         //---------------------------------------------
         else
@@ -841,23 +888,6 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             targetDetected = false;
 
         }
-
-/*
-        if(cnmReverse  && !centerSeen)
-        {
-            cnmReverse = false;
-            targetDetected = false;
-
-            if(message->detections.size() > 0)
-            {
-                cnmReverse = true;
-            }
-        }
-        else
-        {
-
-        }
-*/
     }
 
     //CNM ADDED: if we see a target and have already picked one up
@@ -933,9 +963,13 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
     //no matter what we receive from obstacle
     else if ((!targetDetected || targetCollected) && (message->data > 0))
     {
+
+        //If we can start looking for obstacles
         if(cnmStartObstDetect)
-        {
-            cnmSeenAnObstacle = true;
+        {            
+            cnmSeenAnObstacle = true;                       //We saw an obstacle
+
+            cnmCanCollectTags = false;                      //Don't try picking anything up
 
             cnmAvoidObstacleTimer.start();
 
@@ -976,8 +1010,10 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
     //if we saw an obstacle but no longer see one
     else if (cnmSeenAnObstacle && (!targetDetected || targetCollected) && (message->data == 0))
     {
-        cnmSeenAnObstacle = false;
-        cnmAvoidObstacleTimer.stop();
+
+        cnmSeenAnObstacle = false;                      //We no longer see an obstacle
+        cnmAvoidObstacleTimer.stop();                   //Double tap stopping the timer in case obstacle moves
+        cnmFinishedCenteringTimer.start();              //Start looking for obstacles after this timer
 
         if(cnmAvoidObstacle)
         {
@@ -1242,6 +1278,9 @@ bool CNMTransformCode()
 
             cnmWaitToReset = true;
             cnmWaitToResetWGTimer.start();
+
+            cnmCanCollectTags = false;              //Don't try to collect tags
+            cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
         }
         else if (result.goalDriving && timerTimeElapsed >= 5)
         {
@@ -1367,7 +1406,7 @@ bool CNMPickupCode()
 
     // we see a block and have not picked one up yet
     //CNM ADDED:    AND if we are not doing our reverse behavior
-    if (targetDetected && !targetCollected && !cnmReverse)
+    if (targetDetected && !targetCollected && !cnmReverse  && cnmCanCollectTags)
     {
         result = pickUpController.pickUpSelectedTarget(blockBlock);
         sendDriveCommand(result.cmdVel, result.angleError);
@@ -2131,4 +2170,10 @@ void CNMWaitBeforeDetectObst(const ros::TimerEvent &event)
 {
     cnmStartObstDetect = true;
     cnmTimeBeforeObstDetect.stop();
+}
+
+void CNMWaitToCollectTags(const ros::TimerEvent &event)
+{
+    cnmCanCollectTags = true;
+    cnmWaitToCollectTagsTimer.stop();
 }
