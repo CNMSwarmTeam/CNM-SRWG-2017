@@ -10,7 +10,6 @@ FIXED OBSERVATIONS BY:  Steve Lindsey
   SOLUTION:   - Rovers must wait an amount of time after seeing center to prevent calling obstacle detection
 		on eachother.  Can use a timer to correct the issue.
 	      - ADDED:  Timer to not allow rovers to enter a detect obstacle state until after 10 seconds from boot
-		+ Can edit timer for shortened or longer durations (TIME AT LINE: 253)
 	      - MODIFIED:  Made all rovers turn left as opposed to changing turning direction based on search pattern
 		+ Rovers facing opposing directions would turn into eachother and cause a massive traffic jam
 ----------------------------------------------------------------------------------------------------------------------

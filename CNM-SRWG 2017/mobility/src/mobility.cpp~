@@ -177,7 +177,7 @@ float mapCenterXCoordinates[500];
 float mapCenterYCoordinates[500];
 
 //ODOM Points from across the octagon
-float mapOdomXCoordinates[500];
+float mapOdomXCoordintes[500];
 float mapOdomYCoordinates[500];
 
 geometry_msgs::Pose2D cnmCenterLocation;                    //AVG Center Location spit out by AVGCenter
@@ -223,7 +223,6 @@ bool cnmHasTurned180 = false;
 
 bool cnmAvoidObstacle = false;
 bool cnmSeenAnObstacle = false;
-bool cnmStartObstDetect = false;
 
 //Variables for PickUp
 
@@ -243,14 +242,8 @@ bool cnmRotate = false;
 
 //Obstacle Avoidance Timers
 //---------------------------------------------
-
-//Waits 10 Seconds before beginning to turn away from targets
 ros::Timer cnmAvoidObstacleTimer;
 ros::Duration cnmAvoidObstacleTimerTime(10);
-
-//Waits 10 Seconds before allowing the rovers to start looking for OBST.
-ros::Timer cnmTimeBeforeObstDetect;
-ros::Duration cnmTimeBeforeObstDetectTime(10);
 
 //First Boot Timers
 //---------------------------------------------
@@ -295,6 +288,7 @@ ros::Duration cnmTurn180TimerTime(2.5);
 //---------------------------------------------
 ros::Timer cnmFinishedCenteringTimer;
 ros::Duration cnmFinishedCenteringTimerTime(4);
+
 
 ros::Timer cnmAfterPickUpTimer;
 ros::Duration cnmAfterPickUpTimerTime(2);
@@ -354,7 +348,6 @@ void CNMTurn180(const ros::TimerEvent& event);                  //Turns 180
 
 //Obstacle Avoidance Timer
 void CNMAvoidObstacle(const ros::TimerEvent& event);            //Timer Function(when timer fires, it runs this code)
-void CNMWaitBeforeDetectObst(const ros::TimerEvent& event);     //When called, triggers cnmStartObstDetect to true, allowing rover to start avoiding obstacles
 
 //Target Avoidance Timer
 void CNMAvoidOtherTargets(const ros::TimerEvent& event);        //NOT BEING USED
@@ -462,10 +455,6 @@ int main(int argc, char **argv)
     //Timer for Obstacle Avoidance
     cnmAvoidObstacleTimer = mNH.createTimer(cnmAvoidObstacleTimerTime, CNMAvoidObstacle, true);
     cnmAvoidObstacleTimer.stop();
-
-    //Timer to allow rovers to start detecting targets
-    cnmTimeBeforeObstDetect = mNH.createTimer(cnmTimeBeforeObstDetectTime, CNMWaitBeforeDetectObst, true);
-    cnmTimeBeforeObstDetect.stop();
 
     //-----CENTERFIND TIMERS-----
 
@@ -933,46 +922,44 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
     //no matter what we receive from obstacle
     else if ((!targetDetected || targetCollected) && (message->data > 0))
     {
-        if(cnmStartObstDetect)
+        cnmSeenAnObstacle = true;
+
+        cnmAvoidObstacleTimer.start();
+
+        if(!cnmAvoidObstacle)
         {
-            cnmSeenAnObstacle = true;
-
-            cnmAvoidObstacleTimer.start();
-
-            if(!cnmAvoidObstacle)
+            if(firstTimeSeeObst)
             {
-                if(firstTimeSeeObst)
-                {
-                    std_msgs::String msg;
-                    msg.data = "SEE OBSTACLE; STOPPING";
-                    infoLogPublisher.publish(msg);
-                    firstTimeSeeObst = false;
-                }
-
-                sendDriveCommand(0.0, 0.0);
+                std_msgs::String msg;
+                msg.data = "SEE OBSTACLE; STOPPING";
+                infoLogPublisher.publish(msg);
+                firstTimeSeeObst = false;
             }
-            else
+
+            sendDriveCommand(0.0, 0.0);
+        }
+        else
+        {
+            if(firstTimeRotate)
             {
-                if(firstTimeRotate)
-                {
-                    std_msgs::String msg;
-                    msg.data = "ROTATING";
-                    infoLogPublisher.publish(msg);
+                std_msgs::String msg;
+                msg.data = "ROTATING";
+                infoLogPublisher.publish(msg);
 
-                    searchController.obstacleWasAvoided();
+                searchController.obstacleWasAvoided();
 
-                    firstTimeRotate = false;
-                }
-
-                //no matter what, turn left
-                sendDriveCommand(0.0, 0.2);
-
-                //if searching left, turn left
-                //else { sendDriveCommand(0.0, 0.2); }
-
+                firstTimeRotate = false;
             }
+
+            //if searching right, turn right
+            if(searchController.cnmIsAlternating()) { sendDriveCommand(0.0, -0.2); }
+
+            //if searching left, turn left
+            else { sendDriveCommand(0.0, 0.2); }
+
         }
     }
+
     //if we saw an obstacle but no longer see one
     else if (cnmSeenAnObstacle && (!targetDetected || targetCollected) && (message->data == 0))
     {
@@ -1480,9 +1467,6 @@ void CNMFirstBoot()
 
         //START TIMER to move forward
         cnmInitialPositioningTimer.start();
-
-        //START OBSTACLE DETECTION TIMER
-        cnmTimeBeforeObstDetect.start();
     }
 
     //IF WE SEE CENTER, BREAK EVERYTHING
@@ -1855,7 +1839,7 @@ void CNMAVGMap()
     mapCenterYCoordinates[index] = currentLocationMap.y;
 
     //ODOM ARRAY
-    mapOdomXCoordinates[index] = currentLocation.x;
+    mapOdomXCoordintes[index] = currentLocation.x;
     mapOdomYCoordinates[index] = currentLocation.y;
 
     index++;
@@ -1874,7 +1858,7 @@ void CNMAVGMap()
             mapAvgX += mapCenterXCoordinates[i];
             mapAvgY += mapCenterYCoordinates[i];
 
-            odomAvgX += mapOdomXCoordinates[i];
+            odomAvgX += mapOdomXCoordintes[i];
             odomAvgY += mapOdomYCoordinates[i];
         }
 
@@ -1891,7 +1875,7 @@ void CNMAVGMap()
             mapAvgX += mapCenterXCoordinates[i];
             mapAvgY += mapCenterYCoordinates[i];
 
-            odomAvgX += mapOdomXCoordinates[i];
+            odomAvgX += mapOdomXCoordintes[i];
             odomAvgY += mapOdomYCoordinates[i];
         }
 
@@ -2126,10 +2110,3 @@ void CNMUpdateSearch(const ros::TimerEvent& event)
         //searchController.setCenterLocation(centerLocation);
     }
 }
-
-void CNMWaitBeforeDetectObst(const ros::TimerEvent &event)
-{
-    cnmStartObstDetect = true;
-    cnmTimeBeforeObstDetect.stop();
-}
-
