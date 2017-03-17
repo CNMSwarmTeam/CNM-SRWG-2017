@@ -16,10 +16,10 @@ SearchController::SearchController()
     //--------------------------------------
     searchLoop = 0;//rng->uniformInteger(0, 8);                 //DEFAULT TO 0, uncomment for random point in loop between 0 and 8
     searchCounter = .5;                                         //default value for search distance is .5
-    searchDist = .35;                                            //how much to add to our search pattern (.2 is roughly the width of a swarmie)
+    searchDist = .35;                                           //how much to add to our search pattern (.2 is roughly the width of a swarmie)
 
     //random distance from center to start searching
-    cnmSearchCounterDistance = rng->uniformReal(MIN_DIST_SEARCH, MAX_DIST_SEARCH);  //2;
+    cnmSearchCounterDistance = MIN_DIST_SEARCH;//= rng->uniformReal(MIN_DIST_SEARCH, MAX_DIST_SEARCH);  //2;
 
     cnmNumRotations = 0;
     minNumRotations = 4;
@@ -164,7 +164,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 8)
           {
-              if(!avoidedObstacle) { searchLoop++; }
+              if(!avoidedObstacle) { searchLoop = 0; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -325,8 +325,8 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //if we are good, increment
           else { searchCounter = searchCounter + searchDist; }         //Increment at 0.2 for best results
 
-          //if we haven't tried to avoid an obstacle go to next part of the search pattern
-          if(!avoidedObstacle) { searchLoop++; }
+          //if we haven't tried to avoid an obstacle go to point 2(point 1 and 0 are the same point) of the search pattern
+          if(!avoidedObstacle) { searchLoop += 2; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
           goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
