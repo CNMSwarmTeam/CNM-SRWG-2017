@@ -169,21 +169,24 @@ void targetDetectedReset(const ros::TimerEvent& event);
 //ARRAYS FOR CENTER
 
 //Actual Center Array
-float CenterXCoordinates[500];
-float CenterYCoordinates[500];
+float CenterXCoordinates[10];
+float CenterYCoordinates[10];
+
+float CenterXGPSAVG[10];
+float CenterYGPSAVG[10];
 
 //GPS Points from across the octagon
-float mapCenterXCoordinates[500];
-float mapCenterYCoordinates[500];
+float mapCenterXCoordinates[8];
+float mapCenterYCoordinates[8];
 
 //ODOM Points from across the octagon
-float mapOdomXCoordinates[500];
-float mapOdomYCoordinates[500];
+float mapOdomXCoordinates[8];
+float mapOdomYCoordinates[8];
 
 geometry_msgs::Pose2D cnmCenterLocation;                    //AVG Center Location spit out by AVGCenter
 geometry_msgs::Pose2D avgCenterRotation;                    //AVG Center of the octagon rotation
 
-double CENTEROFFSET = .95;                                  //offset for seeing center
+double CENTEROFFSET = .75;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
 double AVOIDTARGDIST = .45;                                 //distance to drive for avoiding targets
 
@@ -333,6 +336,8 @@ void CNMAVGCenter(geometry_msgs::Pose2D currentLocation);       //Avergages deri
 
 void CNMAVGMap();                                               //Averages GPS AND ODOM points around the octagon
 
+void CNMCenterGPS(int index);                                   //When we see center, we start storing GPS locations
+void CNMAVGCenterGPS(bool hitMax, int index);
 
 //Timer Functions/Callbacks Handlers
 //-----------------------------------
@@ -471,7 +476,7 @@ int main(int argc, char **argv)
     cnmTimeBeforeObstDetect.stop();
 
     //Timer to allow rovers to start picking up tags again
-    cnmWaitToCollectTagsTimer = mNH.createTimer(cnm6SecTime, CNMWaitToCollectTags, true);
+    cnmWaitToCollectTagsTimer = mNH.createTimer(cnm4SecTime, CNMWaitToCollectTags, true);
     cnmWaitToCollectTagsTimer.stop();
 
     //-----CENTERFIND TIMERS-----
@@ -513,6 +518,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
 
     // calls the averaging function, also responsible for
     // transform from Map frame to odom frame.
+
     mapAverage();
 
     // Robot is in automode
@@ -522,8 +528,16 @@ void mobilityStateMachine(const ros::TimerEvent&)
         //cnmFirstBootProtocol runs the first time the robot is set to autonomous mode (2 || 3)
         if(cnmFirstBootProtocol) { CNMFirstBoot(); }
 
-        if(!cnmReverseDone && cnmReverse) { sendDriveCommand(-0.2, 0.0); return; }
+        if(!cnmReverseDone && cnmReverse) 
+	{ 
+            sendDriveCommand(-0.2, 0.0); 
+	    
+    	    std_msgs::String msg;
+            msg.data = "I am Reversing";
+            infoLogPublisher.publish(msg); 
 
+	    return;
+	}
 
         // time since timerStartTime was set to current time
         timerTimeElapsed = time(0) - timerStartTime;
@@ -721,15 +735,30 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         //---------------------------------------------
         if(centerSeen && !targetCollected)
         {
+            static int countLocStored = 0;
+            static bool gotEnoughPoints = false;
+            static bool hitMaxArray = false;
+
+            if(cnmReverse && cnmReverseDone) 
+            { 
+ 		CNMReverseReset();
+		goalLocation = currentLocation; 
+	    }
+
+            if(countLocStored > 3) { gotEnoughPoints = true; }
+            if(countLocStored >= 10) { hitMaxArray = true; countLocStored = 0; }
+
+            CNMCenterGPS(countLocStored);
+            countLocStored++;
 
             if(cnmCenteringFirstTime)
             {
                 cnmCentering = true;
                 cnmCenteringFirstTime = false;
 
-                std_msgs::String msg;
-                msg.data = "Seen A Center Tag";
-                infoLogPublisher.publish(msg);
+                //std_msgs::String msg;
+                //msg.data = "Seen A Center Tag";
+                //infoLogPublisher.publish(msg);
 
                 goalLocation = currentLocation;
                 stateMachineState = STATE_MACHINE_TRANSFORM;
@@ -744,7 +773,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 }
             }
 
-            if(CNMCentered(count, countRight, countLeft)  && !targetCollected)
+            if(CNMCentered(count, countRight, countLeft) && !targetCollected && gotEnoughPoints)
             {
 
                 //If we haven't seen the center before
@@ -755,11 +784,17 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 //---------------------------------------------
                 else if(cnmLocatedCenterFirst && cnmInitialPositioningComplete) { CNMRefindCenter(); }
 
-                if(!cnmReverse && cnmInitialPositioningComplete) { CNMStartReversing(); }
+                CNMAVGCenterGPS(hitMaxArray, countLocStored);
 
                 cnmFinishedCenteringTimer.start();
 
                 searchController.doAnotherOctagon();
+
+                countLocStored = 0;
+                gotEnoughPoints = false;
+                hitMaxArray = false;
+
+                if(!cnmReverse && cnmInitialPositioningComplete) { CNMStartReversing(); }
             }
 
             //FINAL STEPS
@@ -834,9 +869,9 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                     //---------------------------------------------
                     if(cnmTurn180Done)
                     {
-                        std_msgs::String msg;
-                        msg.data = "180 Conditions met";
-                        infoLogPublisher.publish(msg);
+                        //std_msgs::String msg;
+                        //msg.data = "180 Conditions met";
+                        //infoLogPublisher.publish(msg);
 
                         //If so, stop trying to reverse
                         //---------------------------------------------
@@ -970,17 +1005,17 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
             cnmSeenAnObstacle = true;                       //We saw an obstacle
 
             cnmCanCollectTags = false;                      //Don't try picking anything up
-
+	    
             cnmAvoidObstacleTimer.start();
 
             if(!cnmAvoidObstacle)
             {
                 if(firstTimeSeeObst)
                 {
-                    std_msgs::String msg;
-                    msg.data = "SEE OBSTACLE; STOPPING";
-                    infoLogPublisher.publish(msg);
-                    firstTimeSeeObst = false;
+                    //std_msgs::String msg;
+                    //msg.data = "SEE OBSTACLE; STOPPING";
+                    //infoLogPublisher.publish(msg);
+                    //firstTimeSeeObst = false;
                 }
 
                 sendDriveCommand(0.0, 0.0);
@@ -989,9 +1024,9 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
             {
                 if(firstTimeRotate)
                 {
-                    std_msgs::String msg;
-                    msg.data = "ROTATING";
-                    infoLogPublisher.publish(msg);
+                    //std_msgs::String msg;
+                    //msg.data = "ROTATING";
+                    //infoLogPublisher.publish(msg);
 
                     searchController.obstacleWasAvoided();
 
@@ -1007,48 +1042,40 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
             }
         }
     }
+
     //if we saw an obstacle but no longer see one
     else if (cnmSeenAnObstacle && (!targetDetected || targetCollected) && (message->data == 0))
     {
 
         cnmSeenAnObstacle = false;                      //We no longer see an obstacle
-        cnmAvoidObstacleTimer.stop();                   //Double tap stopping the timer in case obstacle moves
-        cnmFinishedCenteringTimer.start();              //Start looking for obstacles after this timer
+	cnmWaitToCollectTagsTimer.start();		//Start timer to start looking for targets again
 
         if(cnmAvoidObstacle)
         {
             if(!firstTimeRotate)
             {
-                std_msgs::String msg;
-                msg.data = "DRIVING FORWARD";
-                infoLogPublisher.publish(msg);
+                //std_msgs::String msg;
+                //msg.data = "DRIVING 30 degrees to the left!";
+                //infoLogPublisher.publish(msg);
 
                 firstTimeRotate = true;
             }
 
-            if(searchController.cnmIsAlternating())
-            {
-                if(targetCollected) { goalLocation.theta = currentLocation.theta + (M_PI/6); }
+	        goalLocation.theta = currentLocation.theta + (M_PI/6);
 
-                else { goalLocation.theta = currentLocation.theta - (M_PI/6); }
-            }
+	        goalLocation.x = currentLocation.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
+	        goalLocation.y = currentLocation.y + (AVOIDOBSTDIST * (sin(goalLocation.theta)));
 
-            else
-            {
-                if(targetCollected) { goalLocation.theta = currentLocation.theta - (M_PI/6); }
+	        stateMachineState = STATE_MACHINE_ROTATE;
 
-                else { goalLocation.theta = currentLocation.theta + (M_PI/6); }
-            }
-
-            goalLocation.x = currentLocation.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
-            goalLocation.y = currentLocation.y + (AVOIDOBSTDIST * (sin(goalLocation.theta)));
-
-            stateMachineState = STATE_MACHINE_ROTATE;
-
-            cnmAvoidObstacle = false;
+	        cnmAvoidObstacle = false;
         }
-
-        firstTimeSeeObst = true;
+	else
+	{
+       		cnmAvoidObstacleTimer.stop();                   //Double tap stopping the timer in case obstacle moves
+	}
+        
+	firstTimeSeeObst = true;
     }
 
     // the front ultrasond is blocked very closely. 0.14m currently
@@ -1267,7 +1294,7 @@ bool CNMTransformCode()
             targetCollected = false;
             targetDetected = false;
             lockTarget = false;
-            sendDriveCommand(0.0, 0.0);  //JS changed from 0.0
+            sendDriveCommand(-0.2, 0.0);  //JS changed from 0.0
 
             // move back to transform step
             stateMachineState = STATE_MACHINE_TRANSFORM;
@@ -1281,6 +1308,9 @@ bool CNMTransformCode()
 
             cnmCanCollectTags = false;              //Don't try to collect tags
             cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
+
+	    CNMStartReversing();
+
         }
         else if (result.goalDriving && timerTimeElapsed >= 5)
         {
@@ -1337,9 +1367,11 @@ bool CNMTransformCode()
 
             if(cnmHasCenterLocation) { CNMAVGMap(); }
 
+	    if(!cnmReverse) { CNMReverseReset(); }
+
             if(searchController.cnmGetSearchPosition() == 9 && searchController.getHasDoneRotation()  && cnmHasCenterLocation)
             {
-                CNMAVGCenter(avgCenterRotation);
+                //CNMAVGCenter(avgCenterRotation);
             }
         }
     }
@@ -1509,9 +1541,9 @@ void CNMFirstBoot()
     if(firstTimeInBoot)
     {
         //Print a message to the info box letting us know the robot recognizes the state change
-        std_msgs::String msg;
-        msg.data = "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
-        infoLogPublisher.publish(msg);
+//        std_msgs::String msg;
+//        msg.data = "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
+//        infoLogPublisher.publish(msg);
 
         //goalLocation = currentLocation;
 
@@ -1522,6 +1554,9 @@ void CNMFirstBoot()
 
         //START OBSTACLE DETECTION TIMER
         cnmTimeBeforeObstDetect.start();
+	
+	goalLocation = currentLocation;
+
     }
 
     //IF WE SEE CENTER, BREAK EVERYTHING
@@ -1529,9 +1564,11 @@ void CNMFirstBoot()
     {
         cnmFirstBootProtocol = false;
         cnmInitialPositioningComplete = true;
+	cnmHasTurned180 = true;
 
         cnmInitialPositioningTimer.stop();
         cnmForwardTimer.stop();
+	cnmInitialWaitTimer.stop();
 
         goalLocation = currentLocation;
     }
@@ -1548,9 +1585,9 @@ void CNMFirstBoot()
 
             if(firstIn180)
             {
-                std_msgs::String msg;
-                msg.data = "Finishing 180, waiting before starting search";
-                infoLogPublisher.publish(msg);
+//                std_msgs::String msg;
+//                msg.data = "Finishing 180, waiting before starting search";
+//                infoLogPublisher.publish(msg);
 
                 firstIn180 = false;
             }
@@ -1562,9 +1599,9 @@ void CNMFirstBoot()
 
                 if(firstInWait)
                 {
-                    std_msgs::String msg;
-                    msg.data = "Finishing 180, waiting before starting search";
-                    infoLogPublisher.publish(msg);
+//                    std_msgs::String msg;
+//                    msg.data = "Finishing 180, waiting before starting search";
+//                    infoLogPublisher.publish(msg);
                     firstInWait = false;
                 }
 
@@ -1581,9 +1618,9 @@ void CNMFirstBoot()
 
             if(firstIn)
             {
-                std_msgs::String msg;
-                msg.data = "Starting Timer To Turn 180";
-                infoLogPublisher.publish(msg);
+//                std_msgs::String msg;
+//                msg.data = "Starting Timer To Turn 180";
+//                infoLogPublisher.publish(msg);
                 firstIn = false;
             }
 
@@ -1623,9 +1660,9 @@ void CNMStartReversing()
 {
     //Pass Info to Info Log
     //---------------------------------------------
-    std_msgs::String msg;
-    msg.data = "STARTING REVERSE TIMER";
-    infoLogPublisher.publish(msg);
+//    std_msgs::String msg;
+//    msg.data = "STARTING REVERSE TIMER";
+//    infoLogPublisher.publish(msg);
 
     //Start First Timer
     //---------------------------------------------
@@ -1662,9 +1699,9 @@ void CNMTargetAvoid()
             cnmAvoidTargets = true;
 
             //Print Message to Info Box
-            std_msgs::String msg;
-            msg.data = "Avoiding Blocks; Carrying Target.  Starting Timer";
-            infoLogPublisher.publish(msg);
+//            std_msgs::String msg;
+//            msg.data = "Avoiding Blocks; Carrying Target.  Starting Timer";
+//            infoLogPublisher.publish(msg);
 
             if(searchController.cnmIsAlternating()) { goalLocation.theta = currentLocation.theta - (M_PI/6); }
             else { goalLocation.theta = currentLocation.theta + (M_PI/6); }
@@ -1690,7 +1727,7 @@ bool CNMCentered(double count, double countRight, double countLeft)
 
     //VARIABLES
     //-----------------------------------
-    const int amountOfTagsToSee = 5;
+    const int amountOfTagsToSee = 3;
     bool seenEnoughTags = false;
 
     bool right, left;
@@ -1777,7 +1814,6 @@ void CNMFirstSeenCenter()
 
     CNMAVGCenter(location);
 
-    //cnmReverse = true;
     CNMStartReversing();
 }
 
@@ -1801,7 +1837,6 @@ void CNMRefindCenter()
 
     CNMAVGCenter(location);
 
-    //cnmReverse = true;
     CNMStartReversing();
 }
 
@@ -1819,17 +1854,17 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
     msg.data = "Averaging Center Location";
     infoLogPublisher.publish(msg);
 
-    const int ASIZE = 500;
+    const int ASIZE = 10;
     static int index = 0;
 
-    static bool reached500 = false;
+    static bool reached10 = false;
 
     CenterXCoordinates[index] = newCenter.x;
     CenterYCoordinates[index] = newCenter.y;
 
     if(index >= ASIZE)
     {
-        if(!reached500) { reached500 = true; }
+        if(!reached10) { reached10 = true; }
         index = 0;
     }
     else
@@ -1840,7 +1875,7 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
     float avgX = 0;
     float avgY = 0;
 
-    if(!reached500)
+    if(!reached10)
     {
         for(int i = 0; i < index; i++)
         {
@@ -1885,9 +1920,9 @@ void CNMAVGMap()
     // point, the rover will collect a GPS and Odom location and blend
     // them together by averaging them.
 
-    static bool reached500 = false;
+    static bool reached8 = false;
     static int index = 0;
-    const int ASIZE = 500;
+    const int ASIZE = 8;
 
     //GPS ARRAY
     mapCenterXCoordinates[index] = currentLocationMap.x;
@@ -1899,14 +1934,14 @@ void CNMAVGMap()
 
     index++;
 
-    if(!reached500 && index == ASIZE + 1) { reached500 = true; }
+    if(!reached8 && index == ASIZE) { reached8 = true; }
 
     float mapAvgX = 0;
     float mapAvgY = 0;
     float odomAvgX = 0;
     float odomAvgY = 0;
 
-    if(!reached500)
+    if(!reached8)
     {
         for(int i = 0; i < index; i++)
         {
@@ -1953,9 +1988,9 @@ void CNMAVGMap()
 
 void CNMInitPositioning(const ros::TimerEvent &event)
 {
-    std_msgs::String msg;
-    msg.data = "Initial Wait Time Complete, Driving Forward";
-    infoLogPublisher.publish(msg);
+//    std_msgs::String msg;
+//    msg.data = "Initial Wait Time Complete, Driving Forward";
+//    infoLogPublisher.publish(msg);
 
     goalLocation.theta = currentLocation.theta;
 
@@ -1969,9 +2004,9 @@ void CNMInitPositioning(const ros::TimerEvent &event)
 void CNMForwardInitTimerDone(const ros::TimerEvent& event)
 {
 
-    std_msgs::String msg;
-    msg.data = "Finished Driving; Turning 180";
-    infoLogPublisher.publish(msg);
+//    std_msgs::String msg;
+//    msg.data = "Finished Driving; Turning 180";
+//    infoLogPublisher.publish(msg);
 
     cnmHasMovedForward = true;
 
@@ -1988,9 +2023,9 @@ void CNMForwardInitTimerDone(const ros::TimerEvent& event)
 void CNMInitialWait(const ros::TimerEvent &e)
 {
 
-    std_msgs::String msg;
-    msg.data = "Finished 180, Starting Search Pattern";
-    infoLogPublisher.publish(msg);
+//    std_msgs::String msg;
+//    msg.data = "Finished 180, Starting Search Pattern";
+//    infoLogPublisher.publish(msg);
 
     cnmHasTurned180 = true;
     cnmInitialPositioningComplete = true;
@@ -2074,9 +2109,9 @@ void CNMAvoidOtherTargets(const ros::TimerEvent& event)
 
 void CNMReverseTimer(const ros::TimerEvent& event)
 {
-    std_msgs::String msg;
-    msg.data = "REVERSE TIMER DONE, STARTING TURN180";
-    infoLogPublisher.publish(msg);
+//    std_msgs::String msg;
+//    msg.data = "REVERSE TIMER DONE, STARTING TURN180";
+//    infoLogPublisher.publish(msg);
 
     cnmTurn180Timer.start();
 
@@ -2176,4 +2211,51 @@ void CNMWaitToCollectTags(const ros::TimerEvent &event)
 {
     cnmCanCollectTags = true;
     cnmWaitToCollectTagsTimer.stop();
+}
+
+void CNMCenterGPS(int index)
+{
+    double normCurrentAngle = angles::normalize_angle_positive(currentLocation.theta);
+
+    CenterXGPSAVG[index] = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    CenterYGPSAVG[index] = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+}
+
+void CNMAVGCenterGPS(bool hitMax, int index)
+{
+    float avgX = 0;
+    float avgY = 0;
+
+    geometry_msgs::Pose2D gpsCenter;
+
+    if(!hitMax)
+    {
+        for(int i = 0; i < index; i++)
+        {
+            avgX += CenterXGPSAVG[i];
+            avgY += CenterYGPSAVG[i];
+        }
+
+        avgX = avgX/index;
+        avgY = avgY/index;
+
+    }
+    else
+    {
+
+        for(int i = 0; i < 10; i++)
+        {
+            avgX += CenterXGPSAVG[i];
+            avgY += CenterYGPSAVG[i];
+        }
+
+        avgX = avgX/10;
+        avgY = avgY/10;
+
+    }
+
+    gpsCenter.x = avgX;
+    gpsCenter.y = avgY;
+
+    CNMAVGCenter(gpsCenter);
 }
