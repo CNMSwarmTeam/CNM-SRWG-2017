@@ -20,7 +20,11 @@ PickUpController::PickUpController() {
 PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
     //threshold distance to be from the target block before attempting pickup
-    float targetDist = 0.22; //meters
+    float targetDist = 0.14; //meters	//ORIGINALLY 0.22
+
+    //GRIPPER OPTIMUM SETTING:
+    //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+    //WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
 
 
     /*PickUpResult result;
@@ -74,21 +78,21 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         result.angleError = 0.0;
         timeOut = true;
     }
-    else if (Td > 2.4) //raise the wrist
+    else if (Td > 1.5) //raise the wrist	(2.7)
     {
         result.cmdVel = -0.25;
         result.angleError = 0.0;
         result.wristAngle = 0;
     }
-    else if (Td > 1.7) //close the fingers and stop driving
+    else if (Td > 1.2) //close the fingers and stop driving	(1.8)
     {
-        result.cmdVel = -0.1;
+        result.cmdVel = 0.0;
         result.angleError = 0.0;
         result.fingerAngle = 0;
         return result;
     }
 
-    if (Td > 3.8 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup
+    if (Td > 2.5 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
     {
         if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
         {
@@ -96,12 +100,16 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         }
         else //recover begin looking for targets again
         {
+    	    //GRIPPER OPTIMUM SETTING:
+	    //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+	    //WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
+
             lockTarget = false;
             result.cmdVel = -0.15;
             result.angleError = 0.0;
             //set gripper
-            result.fingerAngle = M_PI_2;
-            result.wristAngle = 0;
+            result.fingerAngle = 2;
+            result.wristAngle = 1.6;
         }
     }
 
@@ -164,10 +172,13 @@ PickUpResult PickUpController::selectTarget(const apriltags_ros::AprilTagDetecti
     //Lower wrist and open fingures if no locked targt
     else if (!lockTarget)
     {
+        //GRIPPER OPTIMUM SETTING:
+	//FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+	//WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
 
         //set gripper;
-        result.fingerAngle = M_PI_2;
-        result.wristAngle = 1.25;
+        result.fingerAngle = 2.0;
+        result.wristAngle = 1.6;  //1.25
     }
 
     return result;
