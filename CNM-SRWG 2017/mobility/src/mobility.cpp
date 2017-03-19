@@ -222,6 +222,18 @@ bool cnmInitialPositioningComplete = false;
 bool cnmHasMovedForward = false;
 bool cnmHasTurned180 = false;
 
+//Variables for IF we see the center
+
+double cTagcount = 0;
+double cTagcountRight = 0;
+double cTagcountLeft = 0;
+
+//Variables for IF we see targets
+
+double numTargets = 0;
+double numTargLeft = 0;
+double numTargRight = 0;
+
 //Variables for Obstacle Avoidance
 
 bool cnmAvoidObstacle = false;
@@ -233,6 +245,12 @@ bool cnmCanCollectTags = true;                                 //Tells the rover
 
 bool cnmFinishedPickUp = true;
 bool cnmWaitToReset = false;
+int numTagsCarrying = 0;
+
+//Variables for DropOff
+
+bool isDroppingOff = false;
+bool readyToDrop = false;
 
 //Variables for reverse/180 behvaior
 bool firstReverse = true;
@@ -245,12 +263,12 @@ int cnmCheckTimer = 0;
 bool cnmAvoidTargets = false;
 bool cnmRotate = false;
 
-
 //Times For Timers (IN SECONDS)
 //---------------------------------------------
 ros::Duration cnm2SecTime(2);
 ros::Duration cnm3SecTime(3);
 ros::Duration cnm4SecTime(4);
+ros::Duration cnm5SecTime(5);
 ros::Duration cnm6SecTime(6);
 ros::Duration cnm8SecTime(8);
 ros::Duration cnm10SecTime(10);
@@ -294,6 +312,11 @@ ros::Timer cnmUpdateSearchTimer;
 ros::Timer cnmReverseTimer;
 ros::Timer cnmWaitToResetWGTimer;
 
+//DropOff Timers
+//---------------------------------------------
+ros::Timer cnmDropOffDriveTimer;
+ros::Timer cnmDropOffTimeOut;
+
 //180 Timers(TIED TO REVERSE)
 //---------------------------------------------
 ros::Timer cnmTurn180Timer;
@@ -315,6 +338,9 @@ bool CNMPickupCode();                                           //A function for
 bool CNMRotateCode();                                           //A function for the Rotate Mobility State Machine Code
 
 void CNMSkidSteerCode();                                        //A function with all the skid steer mobility code
+
+bool CNMDropOffCode();						//CNM ADDED:  More Controll over Drop Off
+bool CNMDropoffCalc();
 //---------------------------------------------
 
 void CNMFirstBoot();                                            //Code for robot to run on initial switch to autonomous mode
@@ -330,7 +356,7 @@ void CNMTargetPickup(PickUpResult result);                      //Wrist/Gripper 
 
 void CNMTargetAvoid();                                          //Code To Avoid Targets
 
-bool CNMCentered(double count, double countRight, double countLeft);    //Squares Rover up on nest when found
+bool CNMCentered();    						//Squares Rover up on nest when found
 
 void CNMAVGCenter(geometry_msgs::Pose2D currentLocation);       //Avergages derived center locations
 
@@ -353,6 +379,9 @@ void CNMCenterTimerDone(const ros::TimerEvent& event);          //Timer before t
 //PICKUP TIMERS/DROP OFF TIMERS
 void cnmFinishedPickUpTime(const ros::TimerEvent& e);           //Wait before detecting other tags to avoid
 void cnmWaitToResetWG(const ros::TimerEvent& e);                //After Dropping off, wait before resetting grippers
+
+void CNMDropOffDrive(const ros::TimerEvent& e);			//Timer to drive forward before drop off attempt in center
+void CNMDropTimedOut(const ros::TimerEvent& e);
 
 //REVERSE TIMER
 void CNMReverseTimer(const ros::TimerEvent& event);             //REVERSES
@@ -461,6 +490,14 @@ int main(int argc, char **argv)
     cnmAfterPickUpTimer = mNH.createTimer(cnm2SecTime, cnmFinishedPickUpTime, true);
     cnmAfterPickUpTimer.stop();
 
+    //-----DROPOFF TIMERS-----
+
+    cnmDropOffDriveTimer = mNH.createTimer(cnm5SecTime, CNMDropOffDrive, true);
+    cnmDropOffDriveTimer.stop();
+
+    cnmDropOffTimeOut = mNH.createTimer(cnm4SecTime, CNMDropTimedOut, true);
+    cnmDropOffTimeOut.stop();
+
     //AVOIDING TARGETS IF CARRYING ONE
     cnmAvoidOtherTargetTimer = mNH.createTimer(cnm4SecTime, CNMAvoidOtherTargets, true);
     cnmAvoidOtherTargetTimer.stop();
@@ -472,7 +509,7 @@ int main(int argc, char **argv)
     cnmAvoidObstacleTimer.stop();
 
     //Timer to allow rovers to start detecting Obstacles
-    cnmTimeBeforeObstDetect = mNH.createTimer(cnm10SecTime, CNMWaitBeforeDetectObst, true);
+    cnmTimeBeforeObstDetect = mNH.createTimer(cnm8SecTime, CNMWaitBeforeDetectObst, true);
     cnmTimeBeforeObstDetect.stop();
 
     //Timer to allow rovers to start picking up tags again
@@ -530,11 +567,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
 
         if(!cnmReverseDone && cnmReverse) 
 	{ 
-            sendDriveCommand(-0.2, 0.0); 
-	    
-    	    std_msgs::String msg;
-            msg.data = "I am Reversing";
-            infoLogPublisher.publish(msg); 
+            sendDriveCommand(-0.2, 0.0);
 
 	    return;
 	}
@@ -569,16 +602,21 @@ void mobilityStateMachine(const ros::TimerEvent&)
             //---------------------------------------------
             if(!cnmWaitToReset)
             {
+
+		//GRIPPER OPTIMUM SETTING:
+		//FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+		//WRIST:    0 - 1.6    (Any further and will scrape ground if rover hits bumps)
+
                 // set gripper
                 std_msgs::Float32 angle;
 
                 // close fingers all the way
-                angle.data = 0;
+                angle.data = 0.0;
 
                 fingerAnglePublish.publish(angle);
 
                 //raise wrist partially (avoid obstacle calls)
-                angle.data = .6;
+                angle.data = 0.6;	//0.6 is to avoid dragging cube on the ground
 
                 // raise wrist
                 wristAnglePublish.publish(angle);
@@ -630,9 +668,10 @@ void mobilityStateMachine(const ros::TimerEvent&)
             break;
         }
 
-        case STATE_MACHINE_DROPOFF: {
+        case STATE_MACHINE_DROPOFF: 
+	{
             stateMachineMsg.data = "DROPOFF";
-            break;
+	    break; 
         }
 
         default:
@@ -684,9 +723,14 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
     PickUpResult result;
     //---------------------------------------------
 
-    double numTargets = 0;
-    double numTargLeft = 0;
-    double numTargRight = 0;
+    centerSeen = false;             //set to false
+    cTagcount = 0;
+    cTagcountRight = 0;
+    cTagcountLeft = 0;
+
+    numTargets = 0;
+    numTargLeft = 0;
+    numTargRight = 0;
 
     static bool turnLeft = false;
     static bool turnRight = false;
@@ -697,12 +741,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         //IMPORTANT VARIABLES
         //---------------------------------------------
         float cameraOffsetCorrection = 0.020; //meters;
-
-        centerSeen = false;             //set to false
-        double count = 0;
-        double countRight = 0;
-        double countLeft = 0;
-
+        
         //IF WE SEE A CENTER TAG LOOP: this gets # number of center tags
         //---------------------------------------------
         for (int i = 0; i < message->detections.size(); i++)
@@ -712,12 +751,12 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 geometry_msgs::PoseStamped cenPose = message->detections[i].pose;
 
                 // checks if tag is on the right or left side of the image
-                if (cenPose.pose.position.x + cameraOffsetCorrection > 0) { countRight++; }
-                else { countLeft++; }
+                if (cenPose.pose.position.x + cameraOffsetCorrection > 0) { cTagcountRight++; }
+                else { cTagcountLeft++; }
 
                 centerSeen = true;
                 cnmHasCenterLocation = true;
-                count++;
+                cTagcount++;
             }
             else if(message->detections[i].id == 0)
             {
@@ -729,11 +768,11 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             }
         }
 
-        dropOffController.setDataTargets(count,countLeft,countRight);
+        //dropOffController.setDataTargets(count,countLeft,countRight);
 
         //CNM MODIFIED: If we see the center and don't have a target collected
         //---------------------------------------------
-        if(centerSeen && !targetCollected)
+        if(centerSeen && !targetCollected && cTagcount > 3)
         {
             static int countLocStored = 0;
             static bool gotEnoughPoints = false;
@@ -773,7 +812,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 }
             }
 
-            if(CNMCentered(count, countRight, countLeft) && !targetCollected && gotEnoughPoints)
+            if(CNMCentered() && !targetCollected && gotEnoughPoints)
             {
 
                 //If we haven't seen the center before
@@ -794,7 +833,11 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 gotEnoughPoints = false;
                 hitMaxArray = false;
 
-                if(!cnmReverse && cnmInitialPositioningComplete) { CNMStartReversing(); }
+                if(!cnmReverse && cnmInitialPositioningComplete) 
+		{ 
+		    CNMReverseReset();
+		    CNMStartReversing(); 
+		}
             }
 
             //FINAL STEPS
@@ -817,7 +860,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
 
     //if we see an april tag, are not carrying a target, and if timer is ok
     //---------------------------------------------
-    if (message->detections.size() > 0 && !targetCollected && timerTimeElapsed > 5)
+    if (numTargets > 0 && !targetCollected && timerTimeElapsed > 5)
     {
         //Check to see if have found the nests location at all and if we currently see an obstacle
         //---------------------------------------------
@@ -927,7 +970,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
 
     //CNM ADDED: if we see a target and have already picked one up
     //---------------------------------------------
-    else if(message->detections.size() > 1 && targetCollected && timerTimeElapsed > 5)
+    else if(numTargets > numTagsCarrying && targetCollected && timerTimeElapsed > 5)
     {
         //Avoid Targets
         //---------------------------------------------
@@ -937,20 +980,13 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 //a.)  Do we see the center?  If so we need to continue drop off but stop
                 //b.)  If not, just avoid!
 
-        //Do we currently have a target?
-        if(targetCollected  && numTargets > 1)
+        //Do we currently see more tags than we should?
+/*        if(numTargets > numTagsCarrying)
         {
             //Do we see the center?
             if(centerSeen)
             {
-                //Are we in our final approach to drop off a target?
-                if(dropOffController.getCenterApproach())
-                {
-
-                    //DROP OFF TAG?
-                    //REVERSE AND TRY AGAIN?
-
-                }
+		
             }
             else if(cnmFinishedPickUp)
             {
@@ -972,13 +1008,13 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             }
         }
 
-        //If we DON'T have a target
+        //If we DON'T see more tags than we should
         else
         {
             //
         }
         //CNMTargetAvoid();
-    }
+*/    }
 
 }
 
@@ -1249,7 +1285,6 @@ void InitComp()
     centerLocation.y = 0;
     centerLocationOdom.x = 0;
     centerLocationOdom.y = 0;
-
 }
 
 //MOBILITY TRANFORM STATES
@@ -1258,81 +1293,20 @@ void InitComp()
 bool CNMTransformCode()
 {
 
-    // If returning with a target
-    if (targetCollected && !avoidingObstacle && !cnmCentering)
+//MUST TEST:  using currentLocation vs using currentMapLocation
+
+   // If returning with a target
+    if (targetCollected && !avoidingObstacle)
     {
-        // calculate the euclidean distance between
-        // centerLocation and currentLocation
-        dropOffController.setCenterDist(hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y));
-        dropOffController.setDataLocations(cnmCenterLocation, currentLocation, timerTimeElapsed);
-
-        DropOffResult result = dropOffController.getState();
-
-        if (result.timer)
-        {
-            timerStartTime = time(0);
-            reachedCollectionPoint = true;
-        }
-
-        std_msgs::Float32 angle;
-
-        if (result.fingerAngle != -1)
-        {
-            angle.data = result.fingerAngle;
-            fingerAnglePublish.publish(angle);
-        }
-
-        if (result.wristAngle != -1)
-        {
-            angle.data = result.wristAngle;
-            wristAnglePublish.publish(angle);
-        }
-
-        if (result.reset)
-        {
-            timerStartTime = time(0);
-            targetCollected = false;
-            targetDetected = false;
-            lockTarget = false;
-            sendDriveCommand(-0.2, 0.0);  //JS changed from 0.0
-
-            // move back to transform step
-            stateMachineState = STATE_MACHINE_TRANSFORM;
-            reachedCollectionPoint = false;
-            centerLocationOdom = currentLocation;
-
-            dropOffController.reset();
-
-            cnmWaitToReset = true;
-            cnmWaitToResetWGTimer.start();
-
-            cnmCanCollectTags = false;              //Don't try to collect tags
-            cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
-
-	    CNMStartReversing();
-
-        }
-        else if (result.goalDriving && timerTimeElapsed >= 5)
-        {
-            goalLocation = result.centerGoal;
-            stateMachineState = STATE_MACHINE_ROTATE;
-            timerStartTime = time(0);
-        }
-
-        // we are in precision/timed driving
-        else
-        {
-            goalLocation = currentLocation;
-            sendDriveCommand(result.cmdVel, result.angleError);
-            stateMachineState = STATE_MACHINE_TRANSFORM;
-
-            return false;
-        }
+	CNMDropOffCode();
+	return false;
     }
 
+    //if(!isDroppingOff)
+    //{
     //If angle between current and goal is significant
     //if error in heading is greater than 0.4 radians
-    else if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) >
+    if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) >
         rotateOnlyAngleTolerance)
     {
         stateMachineState = STATE_MACHINE_ROTATE;
@@ -1375,12 +1349,14 @@ bool CNMTransformCode()
             }
         }
     }
-
+    //}
     return true;
 }
 
 bool CNMRotateCode()
 {
+
+//MUST TEST:  using currentLocation vs using currentLocationMap
 
     // Calculate the diffrence between current and desired
     // heading in radians.
@@ -1389,7 +1365,7 @@ bool CNMRotateCode()
     // If angle > 0.4 radians rotate but dont drive forward.
     if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) > rotateOnlyAngleTolerance)
     {
-        // rotate but dont drive  0.05 is to prevent turning in reverse
+        // rotate but dont drive 0.05 is to prevent turning in reverse
         sendDriveCommand(0.05, errorYaw);
         return true;
     }
@@ -1405,6 +1381,9 @@ bool CNMRotateCode()
 
 void CNMSkidSteerCode()
 {
+
+//MUST TEST:  Using currentLocation vs currentLocationMap
+
     // calculate the distance between current and desired heading in radians
     float errorYaw = angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta);
 
@@ -1435,6 +1414,10 @@ bool CNMPickupCode()
 {
 
     PickUpResult result;
+
+//GRIPPER OPTIMUM SETTING:
+//FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+//WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
 
     // we see a block and have not picked one up yet
     //CNM ADDED:    AND if we are not doing our reverse behavior
@@ -1473,10 +1456,14 @@ bool CNMPickupCode()
             // assume target has been picked up by gripper
             targetCollected = true;
             result.pickedUp = false;
+
+	    //Hand off to rotate
             stateMachineState = STATE_MACHINE_ROTATE;
 
-            goalLocation.theta = atan2(cnmCenterLocation.y - currentLocation.y, cnmCenterLocation.x - currentLocation.x);
-            //goalLocation.theta = atan2(centerLocationOdom.y - currentLocation.y, centerLocationOdom.x - currentLocation.x);
+//TEST:  MAP VS ODOM
+
+            goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
+            //goalLocation.theta = atan2(cnmCenterLocation.y - currentLocation.y, cnmCenterLocation.x - currentLocation.x);
 
             // set center as goal position
             goalLocation.x = cnmCenterLocation.x;
@@ -1504,6 +1491,180 @@ bool CNMPickupCode()
 
     return false;
 }
+
+bool CNMDropOffCode()
+{	
+	static bool dropNow = false;
+	static bool firstCenterSeen = true;
+	static bool readyGoForward = false;
+	static bool firstInForward = true;
+	bool atCenter = CNMDropoffCalc();
+
+	//if we are officially dropping target off
+	if(dropNow)
+	{
+	    //DROP AND RESET!
+	    //---------------
+
+            // set gripper
+            std_msgs::Float32 angle;
+
+            //open fingers all the way
+            angle.data = 2;  //(0-2 is a good range to open and close grippers)
+
+            fingerAnglePublish.publish(angle);
+
+            //raise wrist partially (avoid obstacle calls)
+            angle.data = 0;
+
+            //raise wrist
+            wristAnglePublish.publish(angle);		    
+
+	    //If we have dropped our target off successfully
+       	    timerStartTime = time(0);
+      	    targetCollected = false;
+       	    targetDetected = false;
+       	    lockTarget = false;
+
+      	    cnmWaitToReset = true;
+       	    cnmWaitToResetWGTimer.start();
+
+       	    cnmCanCollectTags = false;              //Don't try to collect tags
+      	    cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
+
+	    centerLocationOdom = currentLocation;
+
+	    CNMAVGCenter(currentLocation);
+    	    //CNMAVGCenter(currentLocationMap);
+
+       	    // move back to transform step
+       	    stateMachineState = STATE_MACHINE_TRANSFORM;
+
+   	    CNMStartReversing();
+
+	    isDroppingOff = false;
+	    readyToDrop = false;
+	    dropNow = false;
+	    firstCenterSeen = true;
+	    readyGoForward = false;
+	    firstInForward = true;
+
+    	    return true;
+	}
+
+	//If we THINK we are in a position to drop off a tag
+	else if(readyToDrop)
+	{
+
+	    std_msgs::String msg;
+            msg.data = "Squared up; Driving forward";
+            infoLogPublisher.publish(msg);
+
+	    if(cTagcount > 16)
+	    {				
+		msg.data = "Tags greater than 16";
+		infoLogPublisher.publish(msg);
+	    }
+	    else if(cTagcount > 5 && cTagcount <= 16)
+	    {
+
+		double turnDirection = 0.0;
+			
+		stringstream ss;
+                msg.data = "Tags between 6 and 16";
+                infoLogPublisher.publish(msg);
+
+	        if(cTagcountLeft < (cTagcountRight - 6))
+	        {
+		    ss << "Turning Left:  " << cTagcountLeft << " > " << cTagcountRight;
+		    turnDirection = 0.2;
+	        }
+	        else if(cTagcountLeft > (cTagcountRight - 6))
+	        {
+		    ss << "Turning Right:  " << cTagcountLeft << " < " << cTagcountRight;
+		    turnDirection = -0.2;
+	        }
+	        else if((cTagcountLeft - 6) <= 0 && (cTagcountRight - 6) <= 0)
+	        {
+		    ss << "Tag Count is even" << cTagcountLeft << " = " << cTagcountRight;
+	        }
+
+		sendDriveCommand(0.0, turnDirection);
+
+		msg.data = ss.str();
+                infoLogPublisher.publish(msg);
+	    }
+	    else
+	    {
+                msg.data = "Tags less than 6; Dropping off!";
+                infoLogPublisher.publish(msg);
+		
+		dropNow = true;
+	    }
+	}
+
+        //Once somewhat straightened out, go forward	
+	else if(readyGoForward)
+	{
+
+	    if(firstInForward)
+	    {
+	    	std_msgs::String msg;
+            	msg.data = "Squared up; Driving forward";
+            	infoLogPublisher.publish(msg);
+		firstInForward = false;
+	    }
+
+	    //Once Squared Up, trigger in position
+	    sendDriveCommand(0.15, 0.0);
+	    readyGoForward = true;
+	    cnmDropOffDriveTimer.start();
+	}
+
+	//if we see the center
+	else if(centerSeen)
+	{
+	    if(firstCenterSeen)
+	    {
+		std_msgs::String msg;
+            	msg.data = "Found center; Dropping Off";
+            	infoLogPublisher.publish(msg);
+
+	    	isDroppingOff = true;
+		goalLocation = currentLocation;
+		firstCenterSeen = false;
+	    }
+	    
+	    //check to see if we can move forward
+	    readyGoForward = CNMCentered();
+	    
+	}
+
+	//If we should have found the center by now
+	else if(atCenter && !centerSeen)
+	{
+	    
+	}
+	else
+ 	{
+	    goalLocation = cnmCenterLocation;
+            stateMachineState = STATE_MACHINE_ROTATE;
+            timerStartTime = time(0);
+	}
+}
+
+bool CNMDropoffCalc()
+{
+
+        // calculate the euclidean distance between
+        // centerLocation and currentLocation
+        float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
+	float visDistToCenter = 0.5;
+
+	if(distToCenter > visDistToCenter) { return false; }
+	else { return true; }
+}
+
 
 //Wrist/Gripper behavior on pickup moved to this utility function
 
@@ -1541,11 +1702,11 @@ void CNMFirstBoot()
     if(firstTimeInBoot)
     {
         //Print a message to the info box letting us know the robot recognizes the state change
-//        std_msgs::String msg;
-//        msg.data = "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
-//        infoLogPublisher.publish(msg);
+        std_msgs::String msg;
+        msg.data = "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
+        infoLogPublisher.publish(msg);
 
-        //goalLocation = currentLocation;
+        goalLocation = currentLocation;
 
         firstTimeInBoot = false;
 
@@ -1720,38 +1881,37 @@ void CNMTargetAvoid()
 }
 
 //Rotation for squaring up on center
-
-bool CNMCentered(double count, double countRight, double countLeft)
+bool CNMCentered()
 {
     static float linearSpeed, angularSpeed;
 
     //VARIABLES
     //-----------------------------------
-    const int amountOfTagsToSee = 3;
+    const int amountOfTagsToSee = 5;
     bool seenEnoughTags = false;
 
     bool right, left;
 
     if(!cnmReverse)
     {
-        if (countRight > 0) { right = true; }
+        if (cTagcountRight > 0) { right = true; }
         else { right = false; }
 
-        if (countLeft > 0) { left = true; }
+        if (cTagcountLeft > 0) { left = true; }
         else { left = false; }
 
-        if(count > amountOfTagsToSee) { seenEnoughTags = true;}
+        if(cTagcount > amountOfTagsToSee) { seenEnoughTags = true;}
         else { seenEnoughTags = false; }
 
         float turnDirection = 1;
 
         if (seenEnoughTags) //if we have seen enough tags
         {
-            if ((countLeft-5) > countRight) //and there are too many on the left
+            if ((cTagcountLeft - 5) > cTagcountRight) //and there are too many on the left
         {
             right = false; //then we say none on the right to cause us to turn right
         }
-            else if ((countRight-5) > countLeft)
+            else if ((cTagcountRight - 5) > cTagcountLeft)
         {
             left = false; //or left in this case
         }
@@ -1761,20 +1921,22 @@ bool CNMCentered(double count, double countRight, double countLeft)
         }
 
         if (right)
-    {
-        linearSpeed = -0.2 * turnDirection;
-        angularSpeed = -0.35 * turnDirection;
-    }
+    	{
+            linearSpeed = 0.15 * turnDirection;
+            angularSpeed = -0.25 * turnDirection;
+    	}
         else if (left)
-    {
-        linearSpeed = -0.2 * turnDirection;
-        angularSpeed = 0.35 * turnDirection;
-    }
+    	{
+            linearSpeed = -0.15 * turnDirection;
+            angularSpeed = 0.25 * turnDirection;
+        }
         else
-    {
-        linearSpeed = -0.25;
-        angularSpeed = 0.0;
-    }
+        {
+	    if(isDroppingOff) { linearSpeed = 0.15; }
+	    else { linearSpeed = -0.25; }
+	
+	    angularSpeed = 0.0;
+        }
 
         sendDriveCommand(linearSpeed, angularSpeed);
     }
@@ -1809,8 +1971,12 @@ void CNMFirstSeenCenter()
     //NORMALIZE ANGLE
     double normCurrentAngle = angles::normalize_angle_positive(currentLocation.theta);
 
+//TEST DIFFERENCE BETWEEN currentLocation and currentLocationMap
+
     location.x = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    //location.x = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
     location.y = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+    //location.y = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
 
     CNMAVGCenter(location);
 
@@ -1833,7 +1999,9 @@ void CNMRefindCenter()
     double normCurrentAngle = angles::normalize_angle_positive(currentLocation.theta);
 
     location.x = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    location.y = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle))); //(M_PI/4)));
+    //location.x = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    location.y = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+    //location.y = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
 
     CNMAVGCenter(location);
 
@@ -2184,6 +2352,7 @@ void cnmWaitToResetWG(const ros::TimerEvent &e)
 void cnmFinishedPickUpTime(const ros::TimerEvent& e)
 {
     cnmFinishedPickUp = true;
+    numTagsCarrying = numTargets + 1;
     cnmAfterPickUpTimer.stop();
 }
 
@@ -2258,4 +2427,18 @@ void CNMAVGCenterGPS(bool hitMax, int index)
     gpsCenter.y = avgY;
 
     CNMAVGCenter(gpsCenter);
+}
+
+void CNMDropOffDrive(const ros::TimerEvent &event)
+{
+
+    readyToDrop = true;
+    cnmDropOffDriveTimer.stop();
+
+}
+
+void CNMDropTimedOut(const ros::TimerEvent &event)
+{
+    goalLocation = cnmCenterLocation;
+    cnmDropOffTimeOut.stop();
 }
