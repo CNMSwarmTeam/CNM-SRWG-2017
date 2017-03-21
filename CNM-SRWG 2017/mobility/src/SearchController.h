@@ -46,6 +46,8 @@ class SearchController
 
     bool doAnotherOctagon() { doneOneFullRotation = false; }
 
+    void AmILost(bool answer);
+
   private:
     //VARIABLES
     //--------------------------------------
