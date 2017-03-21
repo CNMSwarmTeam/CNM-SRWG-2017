@@ -31,7 +31,6 @@ SearchController::SearchController()
     cnmCenterLocation.x = 0;                                    //set default center to (0,0)
     cnmCenterLocation.y = 0;
 
-    hasDoneRotation = false;
     reverseSearch = false;
     avoidedObstacle = false;
 
@@ -122,18 +121,24 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
       //---------------------------------------------
       if (searchLoop == 0)
       {
-
           //check to see if we have done enough parts of the octagon to warrant incrementing
-          if(cnmNumRotations < minNumRotations) { hasDoneRotation = false; }
+          if(cnmNumRotations < minNumRotations) { doneOneFullRotation = false; }
 
-          //check to see if we need to go through the octagon again
-          if(hasDoneRotation == false) { hasDoneRotation = true; }
+          //if we haven't tried to avoid an obstacle or can increment
+          if(!avoidedObstacle && doneOneFullRotation) 
+	  {
+	      //increment search counter
+	      searchCounter = searchCounter + searchDist;
 
-          //if we are good, increment
-          else { searchCounter = searchCounter + searchDist; }         //Increment at 0.2 for best results
+	      //check to see if incrementing will have us alternate
+	      int dist = floor(searchCounter);
 
-          //if we haven't tried to avoid an obstacle go to next part of the search pattern
-          if(!avoidedObstacle) { searchLoop++; }
+    	      if(dist % 2 != 0 && dist > 2) { searchLoop++; }
+	      else { searchLoop += 2; } 
+	  }
+
+          //check to see if we need reset value
+          if(doneOneFullRotation == false) { doneOneFullRotation = true; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
           goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -317,16 +322,23 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
       if (searchLoop == 0)
       {
           //check to see if we have done enough parts of the octagon to warrant incrementing
-          if(cnmNumRotations < minNumRotations) { hasDoneRotation = false; }
+          if(cnmNumRotations < minNumRotations) { doneOneFullRotation = false; }
 
-          //check to see if we need to go through the octagon again
-          if(hasDoneRotation == false) { hasDoneRotation = true; }
+          //if we haven't tried to avoid an obstacle or can increment
+          if(!avoidedObstacle && doneOneFullRotation) 
+	  {
+	      //increment search counter
+	      searchCounter = searchCounter + searchDist;
 
-          //if we are good, increment
-          else { searchCounter = searchCounter + searchDist; }         //Increment at 0.2 for best results
+	      //check to see if incrementing will have us alternate
+	      int dist = floor(searchCounter);
 
-          //if we haven't tried to avoid an obstacle go to point 2(point 1 and 0 are the same point) of the search pattern
-          if(!avoidedObstacle) { searchLoop += 2; }
+    	      if(dist % 2 != 0 && dist > 2) { searchLoop++; }
+	      else { searchLoop += 2; } 
+	  }
+
+          //check to see if we need reset value
+          if(doneOneFullRotation == false) { doneOneFullRotation = true; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
           goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -660,6 +672,18 @@ void SearchController::obstacleWasAvoided()
 {
     avoidedObstacle = true;
     numTimesAvoidedObst++;
+}
+
+void SearchController::AmILost(bool answer)
+{
+    if(answer == true)
+    {
+	searchCounter = 0.5;
+    }
+    else
+    {
+	searchCounter = cnmSearchCounterDistance;
+    }
 }
 
 
