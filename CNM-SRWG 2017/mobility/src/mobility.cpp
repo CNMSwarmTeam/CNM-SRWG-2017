@@ -1438,10 +1438,9 @@ bool CNMDropOffCode()
 	static bool tryAgain = false;
 	static bool IWasLost = false;
 	static bool startDropOff = false;
+	static bool searchingForCenter = false;
 
 	bool atCenter = CNMDropoffCalc();
-
-
 
 	//if we are officially dropping target off
 	if(dropNow)
@@ -1493,6 +1492,7 @@ bool CNMDropOffCode()
             firstInForward = true;
 	    tryAgain = false;
 	    startDropOff = false;
+	    searchingForCenter = false;
 
 
 	    if(IWasLost)
@@ -1609,14 +1609,33 @@ bool CNMDropOffCode()
             goalLocation = currentLocation;
 	    startDropOff = true;
 	}
+	
+	//If we are looking for the center
+	else if(searchingForCenter)
+	{
+	    goalLocation = searchController.search(currentLocation);
+	    stateMachineState = STATE_MACHINE_ROTATE;
+	}
 
 	//If we should have found the center by now
 	else if(atCenter && !centerSeen)
 	{
+
+	    std_msgs::String msg;
+            msg.data = "Where am I? I don't see the Nest! Better Look!";
+            infoLogPublisher.publish(msg);
+
 	    searchController.AmILost(true);
 	    searchController.setCenterLocation(currentLocation);
 	    IWasLost = true;
 	    purgeMap = true;
+
+	    //Start Looking!
+	    searchingForCenter = true;
+
+	    goalLocation = searchController.search(currentLocation);
+	    stateMachineState = STATE_MACHINE_ROTATE;
+
 	}
 	else
  	{
@@ -1634,13 +1653,13 @@ bool CNMDropoffCalc()
 
     // calculate the euclidean distance between
     // centerLocation and currentLocation
-    //float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
-    float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
+    float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
+    //float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
-	float visDistToCenter = 0.5;
+    float visDistToCenter = 0.5;
 
-	if(distToCenter > visDistToCenter) { return false; }
-	else { return true; }
+    if(distToCenter > visDistToCenter) { return false; }
+    else { return true; }
 }
 
 
