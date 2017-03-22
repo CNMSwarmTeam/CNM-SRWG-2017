@@ -2,12 +2,11 @@
 
 //CONSTANTS
 //--------------------------------------
-double const MIN_DIST_SEARCH = .7;
-double const MAX_DIST_SEARCH = 2.0;
-
-bool hasDoneFirstRotation;
+double const MIN_DIST_SEARCH = 1.25;
+double const MAX_DIST_SEARCH = 3.0;
 
 int numTimesAvoidedObst = 0;
+int minNumRotations;
 
 SearchController::SearchController() 
 {    
@@ -17,12 +16,13 @@ SearchController::SearchController()
     //--------------------------------------
     searchLoop = 0;//rng->uniformInteger(0, 8);                 //DEFAULT TO 0, uncomment for random point in loop between 0 and 8
     searchCounter = .5;                                         //default value for search distance is .5
-    searchDist = .2;                                            //how much to add to our search pattern (.2 is roughly the width of a swarmie)
+    searchDist = .35;                                           //how much to add to our search pattern (.2 is roughly the width of a swarmie)
 
     //random distance from center to start searching
-    cnmSearchCounterDistance = 1;//rng->uniformReal(MIN_DIST_SEARCH, MAX_DIST_SEARCH);
+    cnmSearchCounterDistance = MIN_DIST_SEARCH;//= rng->uniformReal(MIN_DIST_SEARCH, MAX_DIST_SEARCH);  //2;
 
     cnmNumRotations = 0;
+    minNumRotations = 4;
 
     cnmCenterSeen = false;                                      //we start off never seeing the center, these are set to false to reflect that
     cnmHasReset = true;                                         //initialized to true for first boot. Once running, if the the robot loses center,
@@ -31,9 +31,10 @@ SearchController::SearchController()
     cnmCenterLocation.x = 0;                                    //set default center to (0,0)
     cnmCenterLocation.y = 0;
 
-    hasDoneFirstRotation = false;
     reverseSearch = false;
     avoidedObstacle = false;
+
+    doneOneFullRotation = false;
 }
 
 geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLocation)
@@ -57,7 +58,7 @@ geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLoca
 
     int dist = floor(searchCounter);
 
-    if(dist % 2 == 0 && dist > 2)
+    if(dist % 2 != 0 && dist > 2)
     {
         reverseSearch = true;
     }
@@ -75,6 +76,13 @@ geometry_msgs::Pose2D SearchController::search(geometry_msgs::Pose2D currentLoca
     else
     {
         goalLocation = SearchLeft(currentLocation);
+    }
+
+    cnmNumRotations++;
+
+    if(hasDoneRotation == true)
+    {
+        doneOneFullRotation = true;
     }
 
     //RESET variable
@@ -98,15 +106,12 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //reset search counter
           searchCounter = cnmSearchCounterDistance;              //random distance from center to start searching
           cnmHasReset = false;
-          hasDoneFirstRotation = false;
+          hasDoneRotation = false;
       }
 
       //if for some reason searchLoop goes out of bounds, reset
       //---------------------------------------------
-      if (searchLoop < 0 || searchLoop > 9)
-      {
-              searchLoop = 0;
-      }
+      if (searchLoop < 0 || searchLoop > 9) { searchLoop = 0; }
 
       //This algorithm uses the trigonometic coordinates for the unit circle to navigate around a central point
       //using the center location as the point where we pivot around, as opposed to the current location, allows
@@ -116,21 +121,28 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
       //---------------------------------------------
       if (searchLoop == 0)
       {
+          //check to see if we have done enough parts of the octagon to warrant incrementing
+          if(cnmNumRotations < minNumRotations) { doneOneFullRotation = false; }
 
-              if(hasDoneFirstRotation == false)
-              {
-                  hasDoneFirstRotation = true;
-              }
-              else
-              {
-                  searchCounter = searchCounter + searchDist;         //Increment at 0.2 for best results
-              }
+          //if we haven't tried to avoid an obstacle or can increment
+          if(!avoidedObstacle && doneOneFullRotation) 
+	  {
+	      //increment search counter
+	      searchCounter = searchCounter + searchDist;
 
-              if(!avoidedObstacle) { searchLoop++; }
+	      //check to see if incrementing will have us alternate
+	      int dist = floor(searchCounter);
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter;
-              goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+    	      if(dist % 2 != 0 && dist > 2) { searchLoop++; }
+	      else { searchLoop += 2; } 
+	  }
+
+          //check to see if we need reset value
+          if(doneOneFullRotation == false) { doneOneFullRotation = true; }
+
+          goalLocation.x = cnmCenterLocation.x + searchCounter;
+          goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+          goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
   /*
               goalLocation.theta = (15 * M_PI)/8;
               goalLocation.x = (cnmCenterLocation.x + searchCounter) * cos(goalLocation.theta);
@@ -143,7 +155,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           if(!avoidedObstacle) { searchLoop = 0; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
-          goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
+          goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
           goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
         /*
           goalLocation.theta = (15 * M_PI)/8;
@@ -157,7 +169,7 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
           //---------------------------------------------
           else if (searchLoop == 8)
           {
-              if(!avoidedObstacle) { searchLoop++; }
+              if(!avoidedObstacle) { searchLoop = 0; }
 
               goalLocation.x = cnmCenterLocation.x + searchCounter;
               goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -284,8 +296,6 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
 {
     geometry_msgs::Pose2D goalLocation;
 
-    goalLocation.theta = 0;
-
       //if we found the center and have had to reset our center location/found the center for the first time:
           //this bool will be set to true only if search controller is passed a false to cnmCenterSeen, once it runs
           //search again, and if it has seen the center, this will start us off with the original RNG distance
@@ -296,15 +306,12 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
           //reset search counter
           searchCounter = cnmSearchCounterDistance;              //random distance from center to start searching
           cnmHasReset = false;
-          hasDoneFirstRotation = false;
+          hasDoneRotation = false;
       }
 
       //if for some reason searchLoop goes out of bounds, reset
       //---------------------------------------------
-      if (searchLoop < 0 || searchLoop > 9)
-      {
-              searchLoop = 0;
-      }
+      if (searchLoop < 0 || searchLoop > 9) { searchLoop = 0; }
 
       //This algorithm uses the trigonometic coordinates for the unit circle to navigate around a central point
       //using the center location as the point where we pivot around, as opposed to the current location, allows
@@ -314,16 +321,24 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
       //---------------------------------------------
       if (searchLoop == 0)
       {
-          if(!avoidedObstacle) { searchLoop++; }
+          //check to see if we have done enough parts of the octagon to warrant incrementing
+          if(cnmNumRotations < minNumRotations) { doneOneFullRotation = false; }
 
-          if(hasDoneFirstRotation == false)
-          {
-              hasDoneFirstRotation = true;
-          }
-          else
-          {
-              searchCounter = searchCounter + searchDist;         //Increment at 0.2 for best results
-          }
+          //if we haven't tried to avoid an obstacle or can increment
+          if(!avoidedObstacle && doneOneFullRotation) 
+	  {
+	      //increment search counter
+	      searchCounter = searchCounter + searchDist;
+
+	      //check to see if incrementing will have us alternate
+	      int dist = floor(searchCounter);
+
+    	      if(dist % 2 != 0 && dist > 2) { searchLoop++; }
+	      else { searchLoop += 2; } 
+	  }
+
+          //check to see if we need reset value
+          if(doneOneFullRotation == false) { doneOneFullRotation = true; }
 
           goalLocation.x = cnmCenterLocation.x + searchCounter;
           goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
@@ -334,7 +349,7 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
               goalLocation.y = (cnmCenterLocation.y + searchCounter) * sin(goalLocation.theta);
   */
 
-          }
+       }
 
           //between 0 and PI/6
           //---------------------------------------------
@@ -640,7 +655,7 @@ int SearchController::cnmGetSearchPosition()
 {
     if(searchLoop == 0)
     {
-        return 8;
+        return 9;
     }
     else
     {
@@ -657,6 +672,18 @@ void SearchController::obstacleWasAvoided()
 {
     avoidedObstacle = true;
     numTimesAvoidedObst++;
+}
+
+void SearchController::AmILost(bool answer)
+{
+    if(answer == true)
+    {
+	searchCounter = 0.5;
+    }
+    else
+    {
+	searchCounter = cnmSearchCounterDistance;
+    }
 }
 
 
