@@ -4,6 +4,7 @@
 
 #include <geometry_msgs/Pose2D.h>
 #include <std_msgs/Float32.h>
+#include "SearchController.h"
 
 struct DropOffResult {
     float cmdVel;
@@ -20,6 +21,7 @@ class DropOffController
 {
 public:
     DropOffController();
+
     ~DropOffController();
 
     void reset();
@@ -28,10 +30,15 @@ public:
     float getSpinner() {return spinner;}
     float getCentX() { return centerLocation.x;}
     float getCount() { return count;}
+    bool getCenterApproach() { return centerApproach;}
 
     void setDataTargets(int ccount, double lleft, double rright);
     void setCenterDist(float dist) {distanceToCenter = dist;}
     void setDataLocations(geometry_msgs::Pose2D center, geometry_msgs::Pose2D current, float sync);
+
+    //void setSearch(SearchController *cont) { DropOffSearch = cont; }
+
+    bool cnmInPosition;
 
 private:
 
@@ -74,10 +81,11 @@ private:
     float addSpinSize;
     float addSpinSizeAmmount;
 
+    //SearchController DropOffSearch;
+
     float searchVelocity;
 
     void calculateDecision();
-
 
 };
 #endif // end header define

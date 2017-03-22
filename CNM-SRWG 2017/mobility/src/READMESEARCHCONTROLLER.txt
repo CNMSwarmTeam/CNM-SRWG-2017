@@ -1,5 +1,36 @@
 SEARCHCONTROLLER.CPP
 
+--------3/4/2017--------
+EDITED BY:  Jeff Schlindwein
+
+- Added second search algorithm for going right
+  + now have left/right search functionality.
+  + subdivided search to 2 private utility functions(searchLeft, searchRight)
+    - these are private
+    - accessed only by search()
+  + subdivided continueInterruptedSearch to 2 private utility functions (LeftSearch, RightSearch)
+    - these are private
+    - accessed only by continueInterruptedSearch
+  + These 2 subdivisions act seperately but work together
+    - searchLeft/searchRight plot the points for octagon search
+    - LeftSearch/RightSearch decide which point to drive to 
+      + based on the robots current angle 
+      + which pattern they are driving
+      
+THESE ARE UNFINISHED AND NEED FINAL POLISH
+
+NOTE:  They work well enough for use
+
+--------2/20/2017--------
+EDITED BY:  Jeff Schlindwein, Steve Lindsey, Kaily Young, Juan Rueda, Paul Ward
+- Incorporated <angles/angles.h> to header file
+  + gives us access to radians to degrees conversion functions
+    - used new conversion functions to simplify interruptedSearch
+- Adjusted search pattern distances (randomly generated numbers that dictate how far we start away from the center)
+  + values are (.7, 2.01) from (.9, 1.56)
+  + this gives us much greater variety for robots to choose a search line that is different than another robots
+  + searchDistance may be increased (currently set to .2 which is the width of a robot)
+
 --------2/18/2017--------
 EDITED BY:  Jeff Schlindwein
 
