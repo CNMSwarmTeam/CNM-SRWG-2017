@@ -186,7 +186,7 @@ float mapOdomYCoordinates[8];
 geometry_msgs::Pose2D cnmCenterLocation;                    //AVG Center Location spit out by AVGCenter
 geometry_msgs::Pose2D avgCenterRotation;                    //AVG Center of the octagon rotation
 
-double CENTEROFFSET = .95;                                  //offset for seeing center
+double CENTEROFFSET = .85;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
 double AVOIDTARGDIST = .45;                                 //distance to drive for avoiding targets
 
@@ -200,7 +200,7 @@ float searchVelocity = 0.2;                                 // meters/second  OR
 //Variables for MobilityStateMachine:  MOVED HERE FOR SCOPE
 
 float rotateOnlyAngleTolerance = 0.5;                       //jms chnaged from .4
-int returnToSearchDelay = 10;
+int returnToSearchDelay = 5;
 
 //NEST INFORMATION
 
@@ -921,7 +921,6 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                     CNMTargetPickup(result);
                 }
             }
-
         }
 
         //If not gotten the centers point, avoid the target
@@ -1228,8 +1227,7 @@ bool CNMTransformCode()
     //If angle between current and goal is significant
     //if error in heading is greater than 0.4 radians
     
-    float distToGoal = hypot(goalLocation.x - currentLocation.x, goalLocation.y - currentLocation.y);
-    
+    float distToGoal = hypot(goalLocation.x - currentLocationMap.x, goalLocation.y - currentLocationMap.y);    
 
     //TRY MAP??
     if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) >
@@ -1248,9 +1246,11 @@ bool CNMTransformCode()
     //Otherwise, drop off target and select new random uniform heading
     //If no targets have been detected, assign a new goal
 
-    //else if (!targetDetected && timerTimeElapsed > returnToSearchDelay)
-    else if(!targetDetected && distToGoal < 0.5 && timerTimeElapsed > returnToSearchDelay && cnmInitialPositioningComplete)
+    else if (!targetDetected && (distToGoal < 0.8  || timerTimeElapsed > returnToSearchDelay))
+    //else if(!targetDetected && distToGoal < 0.5 && timerTimeElapsed > returnToSearchDelay && cnmInitialPositioningComplete)
     {
+	std_msgs::String msg;
+	
 	if(cnmReverse || cnmCentering) { CNMReverseReset(); }
 
         int position;
@@ -1261,11 +1261,19 @@ bool CNMTransformCode()
         position = searchController.cnmGetSearchPosition();
 
         distance = searchController.cnmGetSearchDistance();
-
+	
         stringstream ss;
-        ss << "Traveling to point " << position << " in pattern:  " << distance;
+        ss << "Traveling to point " << position << " in pattern:  " << distance << "DIST:  " << distToGoal;
         msg.data = ss.str();
         infoLogPublisher.publish(msg);
+    }
+    else
+    {
+	std_msgs::String msg;
+	stringstream ss;
+	ss << "Dist to goal not > 0.35;  It is " << distToGoal << "Time:  " << timerTimeElapsed;
+        msg.data = ss.str();
+        infoLogPublisher.publish(msg);	
     }
 
     return true;
@@ -1278,19 +1286,18 @@ bool CNMRotateCode()
 
     // Calculate the diffrence between current and desired
     // heading in radians.
-    float errorYaw = angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta);
+    float errorYaw = angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta);
     int dirToRotate = 1;
 
     if(errorYaw < 0) { dirToRotate = -1; }
 
     // If angle > 0.4 radians rotate but dont drive forward.
-    if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) > rotateOnlyAngleTolerance)
+    if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) > rotateOnlyAngleTolerance)
     {
 
-	float turnSpeed = 0.2 * dirToRotate;
-
+	float turnSpeed = 0.3 * dirToRotate;
         // rotate but dont drive 0.05 is to prevent turning in reverse
-        sendDriveCommand(0.05, turnSpeed);
+        sendDriveCommand((-0.05 * dirToRotate), turnSpeed);
         return true;
     }
     else
@@ -1477,6 +1484,7 @@ bool CNMDropOffCode()
 	    {
 		IWasLost = false;
 		searchController.AmILost(false);
+	    	searchController.doAnotherOctagon();
 	    }
 
 
