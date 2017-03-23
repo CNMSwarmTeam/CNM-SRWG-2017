@@ -166,29 +166,23 @@ void targetDetectedReset(const ros::TimerEvent& event);
 //CNM Code Follows:
 //--------------------------------------------
 
-//ARRAYS FOR CENTER
-
-//Actual Center Array
-float CenterXCoordinates[10];
-float CenterYCoordinates[10];
-
-float CenterXGPSAVG[10];
-float CenterYGPSAVG[10];
-
-//GPS Points from across the octagon
-float mapCenterXCoordinates[8];
-float mapCenterYCoordinates[8];
-
-//ODOM Points from across the octagon
-float mapOdomXCoordinates[8];
-float mapOdomYCoordinates[8];
-
-geometry_msgs::Pose2D cnmCenterLocation;                    //AVG Center Location spit out by AVGCenter
-geometry_msgs::Pose2D avgCenterRotation;                    //AVG Center of the octagon rotation
+//CONSTANTS
 
 double CENTEROFFSET = .85;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
 double AVOIDTARGDIST = .45;                                 //distance to drive for avoiding targets
+
+//ARRAYS FOR CENTER
+
+const int ASIZE = 10;
+int centerIndex = 0;
+bool maxedCenterArray = false;
+
+//Actual Center Array
+float CenterXCoordinates[ASIZE];
+float CenterYCoordinates[ASIZE];
+
+geometry_msgs::Pose2D cnmCenterLocation;                    //AVG Center Location spit out by AVGCenter
 
 //Target Collection Variables
 //--------------------------------------------
@@ -207,7 +201,7 @@ int returnToSearchDelay = 5;
 bool centerSeen = false;                                    //If we CURRENTLY see the center
 bool cnmHasCenterLocation = false;                          //If we have a center/nest location at all
 bool cnmLocatedCenterFirst = false;                         //If this is the first time we have seen the nest
-bool purgeMap = false;
+bool resetMap = false;
 
 //FINDING NEST BEHAVIOR
 
@@ -360,7 +354,8 @@ void CNMTargetAvoid();                                          //Code To Avoid 
 
 bool CNMCentered();    						//Squares Rover up on nest when found
 
-void CNMAVGCenter(geometry_msgs::Pose2D currentLocation);       //Avergages derived center locations
+void CNMAVGCenter();					        //Avergages derived center locations
+void CNMProjectCenter();					//Projects current location forward to the center
 
 void CNMAVGMap();                                               //Averages GPS AND ODOM points around the octagon
 
@@ -776,7 +771,6 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         {
             static int countLocStored = 0;
             static bool gotEnoughPoints = false;
-            static bool hitMaxArray = false;
 
             if(cnmReverse && cnmReverseDone) 
             { 
@@ -785,10 +779,10 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 //goalLocation = currentLocationMap;
             }
 
-            if(countLocStored > 3) { gotEnoughPoints = true; }
-            if(countLocStored >= 10) { hitMaxArray = true; countLocStored = 0; }
+            if(countLocStored > 4) { gotEnoughPoints = true; }	                
 
-            CNMCenterGPS(countLocStored);
+	    CNMProjectCenter();
+
             countLocStored++;
 
             if(cnmCenteringFirstTime)
@@ -825,15 +819,12 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 //---------------------------------------------
                 else if(cnmLocatedCenterFirst && cnmInitialPositioningComplete) { CNMRefindCenter(); }
 
-                CNMAVGCenterGPS(hitMaxArray, countLocStored);
-
                 cnmFinishedCenteringTimer.start();
 
                 searchController.doAnotherOctagon();
 
                 countLocStored = 0;
                 gotEnoughPoints = false;
-                hitMaxArray = false;
 
                 if(!cnmReverse && cnmInitialPositioningComplete) 
                 {
@@ -1433,7 +1424,7 @@ bool CNMDropOffCode()
 	//if we are officially dropping target off
 	if(dropNow)
 	{
-	    //DROP AND RESET!
+	    //DROP
 	    //---------------
 
             // set gripper
@@ -1450,7 +1441,8 @@ bool CNMDropOffCode()
             //raise wrist
             wristAnglePublish.publish(angle);		    
 
-            //If we have dropped our target off successfully
+	    //RESET!
+	    //---------------
        	    timerStartTime = time(0);
       	    targetCollected = false;
        	    targetDetected = false;
@@ -1458,17 +1450,6 @@ bool CNMDropOffCode()
 
       	    cnmWaitToReset = true;
        	    cnmWaitToResetWGTimer.start();
-
-       	    cnmCanCollectTags = false;              //Don't try to collect tags
-      	    cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
-
-            //ADD current position to array of center tags
-
-
-       	    // move back to transform step
-       	    stateMachineState = STATE_MACHINE_TRANSFORM;
-
-            CNMStartReversing();
 
             isDroppingOff = false;
             readyToDrop = false;
@@ -1480,13 +1461,29 @@ bool CNMDropOffCode()
 	    startDropOff = false;
 	    searchingForCenter = false;
 
+       	    cnmCanCollectTags = false;              //Don't try to collect tags
+      	    cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
+
+            //ADD current position to array of center tags
+
+	    //CenterXCoordinates[centerIndex] = currentLocation.x;
+    	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+   	    //CenterYCoordinates[centerIndex] = currentLocation.y;
+    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
+
+	    CNMAVGCenter();
+
+       	    // move back to transform step
+       	    stateMachineState = STATE_MACHINE_TRANSFORM;
+
+            CNMStartReversing();
+
 	    if(IWasLost)
 	    {
 		IWasLost = false;
 		searchController.AmILost(false);
 	    	searchController.doAnotherOctagon();
 	    }
-
 
     	    return false;
 	}
@@ -1558,7 +1555,6 @@ bool CNMDropOffCode()
     	//Once somewhat straightened out, go forward
 	else if(readyGoForward)
 	{
-
 	    if(firstInForward)
 	    {
 	    	std_msgs::String msg;
@@ -1613,7 +1609,7 @@ bool CNMDropOffCode()
 	    searchController.AmILost(true);
 	    searchController.setCenterLocation(currentLocationMap);
 	    IWasLost = true;
-	    purgeMap = true;
+	    resetMap = true;
 
 	    //Start Looking!
 	    searchingForCenter = true;
@@ -1839,7 +1835,7 @@ void CNMTargetAvoid()
             //ADDED:  getCenterApproach method to drop off class to get state of dropping off targets
             //  This was necessary so we don't try to avoid targets when driving in the center
         //---------------------------------------------
-        if(!cnmAvoidTargets && !dropOffController.getCenterApproach())
+        if(!cnmAvoidTargets)
         {
             //Trigger Bool
             cnmAvoidTargets = true;
@@ -1936,12 +1932,6 @@ bool CNMCentered()
 
 void CNMFirstSeenCenter()
 {
-    //Create a new location object
-    geometry_msgs::Pose2D location;
-
-    //location = currentLocation;
-    location = currentLocationMap;
-
     //Print out to the screen we found the nest for the first time
     std_msgs::String msg;
     msg.data = "Found Initial Nest Location";
@@ -1949,7 +1939,7 @@ void CNMFirstSeenCenter()
 
     //change bool
     cnmLocatedCenterFirst = true;
-    searchController.setCenterSeen(true);
+    searchController.AmILost(false);
 
     if(cnmInitialPositioningComplete)
     {
@@ -1957,101 +1947,78 @@ void CNMFirstSeenCenter()
         infoLogPublisher.publish(msg);
     }
 
-    //NORMALIZE ANGLE
-    double normCurrentAngle = angles::normalize_angle_positive(currentLocationMap.theta);
-
-    //TEST DIFFERENCE BETWEEN currentLocation and currentLocationMap
-
-    //location.x = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    location.x = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    //location.y = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-    location.y = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-
-    CNMAVGCenter(location);
+    CNMProjectCenter();
 
     CNMStartReversing();
 }
 
 void CNMRefindCenter()
 {
-    //Create a new location object
-    geometry_msgs::Pose2D location;
-
-    //location = currentLocation;
-    location = currentLocationMap;
-
-    //pass search Controller the center point
-        //this is in this statement so it doesn't repeatedly print
     std_msgs::String msg;
     msg.data = "Refound center, updating location";
     infoLogPublisher.publish(msg);
 
-    //NORMALIZE ANGLE
-    double normCurrentAngle = angles::normalize_angle_positive(currentLocationMap.theta);
-
-    //location.x = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    location.x = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    //location.y = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-    location.y = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-
-    CNMAVGCenter(location);
+    CNMProjectCenter();
 
     CNMStartReversing();
 }
 
 //CNM MAP BUILDING
 
-void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
-{   
-
+void CNMProjectCenter()
+{
     //NOTES ON THIS FUNCTION:
-    //- Takes a derived center point, puts it in an array of other
-    //  center points and averages them together... allowing us to
-    //  build a more dynamic center location (able to adjust with drift)
+    //- Takes current point and projects it out to where the center SHOULD be
+    //- Calls CNMAVGCenter to avg new center location searchController new avg center
 
-    std_msgs::String msg;
-    msg.data = "Averaging Center Location";
-    infoLogPublisher.publish(msg);
-
-    const int ASIZE = 10;
-    static int index = 0;
-
-    static bool reached10 = false;
-
-    if(purgeMap)
+    if(resetMap)
     {
-	purgeMap = false;
-	reached10 = false;
-
-	index = 0;
+	resetMap = false;
+	maxedCenterArray = false;
+	centerIndex = 0;
     }
 
-    CenterXCoordinates[index] = newCenter.x;
-    CenterYCoordinates[index] = newCenter.y;
+    //NORMALIZE ANGLE
+    double normCurrentAngle = angles::normalize_angle_positive(currentLocationMap.theta);
 
-    if(index >= ASIZE)
+    //CenterXCoordinates[centerIndex] = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    CenterXCoordinates[centerIndex] = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    //CenterYCoordinates[centerIndex] = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+    CenterYCoordinates[centerIndex] = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+
+    CNMAVGCenter();
+}
+
+void CNMAVGCenter()
+{   
+
+    std_msgs::String msg;
+    msg.data = "Averaging Center Locations";
+    infoLogPublisher.publish(msg);
+
+    if(centerIndex >= ASIZE)
     {
-        if(!reached10) { reached10 = true; }
-        index = 0;
+        if(!maxedCenterArray) {  maxedCenterArray = true; }
+        centerIndex = 0;
     }
     else
     {
-        index++;
+        centerIndex++;
     }
 
     float avgX = 0;
     float avgY = 0;
 
-    if(!reached10)
+    if(!maxedCenterArray)
     {
-        for(int i = 0; i < index; i++)
+        for(int i = 0; i < centerIndex; i++)
         {
             avgX += CenterXCoordinates[i];
             avgY += CenterYCoordinates[i];
         }
 
-        avgX = (avgX / index);
-        avgY = (avgY / index);
+        avgX = (avgX / centerIndex);
+        avgY = (avgY / centerIndex);
     }
     else
     {
@@ -2065,9 +2032,6 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
         avgY = (avgY / ASIZE);
     }
 
-    //avgX += currentLocationMap.x;
-    //avgY += currentLocationMap.y;
-
     //UPDATE CENTER LOCATION
     //---------------------------------------------
     cnmCenterLocation.x = (avgX);
@@ -2078,74 +2042,6 @@ void CNMAVGCenter(geometry_msgs::Pose2D newCenter)
     searchController.setCenterLocation(cnmCenterLocation);
 }
 
-void CNMAVGMap()
-{
-
-    //NOTES ON THIS FUNCTION:
-    //-This function will only run once the rover has completed a full
-    // rotation around the octagon and HAS found the center.  At each
-    // point, the rover will collect a GPS and Odom location and blend
-    // them together by averaging them.
-
-    static bool reached8 = false;
-    static int index = 0;
-    const int ASIZE = 8;
-
-    //GPS ARRAY
-    mapCenterXCoordinates[index] = currentLocationMap.x;
-    mapCenterYCoordinates[index] = currentLocationMap.y;
-
-    //ODOM ARRAY
-    mapOdomXCoordinates[index] = currentLocation.x;
-    mapOdomYCoordinates[index] = currentLocation.y;
-
-    index++;
-
-    if(!reached8 && index == ASIZE) { reached8 = true; }
-
-    float mapAvgX = 0;
-    float mapAvgY = 0;
-    float odomAvgX = 0;
-    float odomAvgY = 0;
-
-    if(!reached8)
-    {
-        for(int i = 0; i < index; i++)
-        {
-            mapAvgX += mapCenterXCoordinates[i];
-            mapAvgY += mapCenterYCoordinates[i];
-
-            odomAvgX += mapOdomXCoordinates[i];
-            odomAvgY += mapOdomYCoordinates[i];
-        }
-
-        mapAvgX = (mapAvgX / index);
-        mapAvgY = (mapAvgY / index);
-
-        odomAvgX = (odomAvgX / index);
-        odomAvgY = (odomAvgY / index);
-    }
-    else
-    {
-        for(int i = 0; i < ASIZE; i++)
-        {
-            mapAvgX += mapCenterXCoordinates[i];
-            mapAvgY += mapCenterYCoordinates[i];
-
-            odomAvgX += mapOdomXCoordinates[i];
-            odomAvgY += mapOdomYCoordinates[i];
-        }
-
-        mapAvgX = (mapAvgX / ASIZE);
-        mapAvgY = (mapAvgY / ASIZE);
-
-        odomAvgX = (odomAvgX / ASIZE);
-        odomAvgY = (odomAvgY / ASIZE);
-    }
-
-    avgCenterRotation.x = ((mapAvgX + odomAvgX) / 2);
-    avgCenterRotation.y = ((mapAvgY + odomAvgY) / 2);
-}
 
 //CNM TIMER FUNCTIONS
 //-----------------------------------
@@ -2379,53 +2275,6 @@ void CNMWaitToCollectTags(const ros::TimerEvent &event)
     cnmWaitToCollectTagsTimer.stop();
 }
 
-void CNMCenterGPS(int index)
-{
-    double normCurrentAngle = angles::normalize_angle_positive(currentLocation.theta);
-
-    CenterXGPSAVG[index] = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    CenterYGPSAVG[index] = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-}
-
-void CNMAVGCenterGPS(bool hitMax, int index)
-{
-    float avgX = 0;
-    float avgY = 0;
-
-    geometry_msgs::Pose2D gpsCenter;
-
-    if(!hitMax)
-    {
-        for(int i = 0; i < index; i++)
-        {
-            avgX += CenterXGPSAVG[i];
-            avgY += CenterYGPSAVG[i];
-        }
-
-        avgX = avgX/index;
-        avgY = avgY/index;
-
-    }
-    else
-    {
-
-        for(int i = 0; i < 10; i++)
-        {
-            avgX += CenterXGPSAVG[i];
-            avgY += CenterYGPSAVG[i];
-        }
-
-        avgX = avgX/10;
-        avgY = avgY/10;
-
-    }
-
-    gpsCenter.x = avgX;
-    gpsCenter.y = avgY;
-
-    CNMAVGCenter(gpsCenter);
-}
-
 void CNMDropOffDrive(const ros::TimerEvent &event)
 {
 
@@ -2440,7 +2289,6 @@ void CNMDropOffDrive(const ros::TimerEvent &event)
 
         dropNow = true;
     }
-
 }
 
 void CNMDropTimedOut(const ros::TimerEvent &event)
