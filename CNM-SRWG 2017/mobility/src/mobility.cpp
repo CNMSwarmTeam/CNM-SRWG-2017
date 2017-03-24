@@ -174,7 +174,7 @@ double AVOIDTARGDIST = .45;                                 //distance to drive 
 
 //ARRAYS FOR CENTER
 
-const int ASIZE = 10;
+const int ASIZE = 40;
 int centerIndex = 0;
 bool maxedCenterArray = false;
 
@@ -183,6 +183,11 @@ float CenterXCoordinates[ASIZE];
 float CenterYCoordinates[ASIZE];
 
 geometry_msgs::Pose2D cnmCenterLocation;                    //AVG Center Location spit out by AVGCenter
+
+float avgCurrentCoordsX[ASIZE];
+float avgCurrentCoordsY[ASIZE];
+
+geometry_msgs::Pose2D cnmAVGCurrentLocation; 
 
 //Target Collection Variables
 //--------------------------------------------
@@ -194,7 +199,7 @@ float searchVelocity = 0.2;                                 // meters/second  OR
 //Variables for MobilityStateMachine:  MOVED HERE FOR SCOPE
 
 float rotateOnlyAngleTolerance = 0.5;                       //jms chnaged from .4
-int returnToSearchDelay = 5;
+int returnToSearchDelay = 8;
 
 //NEST INFORMATION
 
@@ -361,6 +366,8 @@ void CNMAVGMap();                                               //Averages GPS A
 
 void CNMCenterGPS(int index);                                   //When we see center, we start storing GPS locations
 void CNMAVGCenterGPS(bool hitMax, int index);
+
+bool CNMCurrentLocationAVG();
 
 //Timer Functions/Callbacks Handlers
 //-----------------------------------
@@ -819,10 +826,6 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
                 //---------------------------------------------
                 else if(cnmLocatedCenterFirst && cnmInitialPositioningComplete) { CNMRefindCenter(); }
 
-                cnmFinishedCenteringTimer.start();
-
-                searchController.doAnotherOctagon();
-
                 countLocStored = 0;
                 gotEnoughPoints = false;
 
@@ -942,7 +945,6 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         //Do we currently see more tags than we should?
         if(isDroppingOff) { seeMoreTargets = true; }
     }
-
 }
 
 void modeHandler(const std_msgs::UInt8::ConstPtr& message)
@@ -1237,32 +1239,45 @@ bool CNMTransformCode()
     //Otherwise, drop off target and select new random uniform heading
     //If no targets have been detected, assign a new goal
 
-    else if (!targetDetected && (distToGoal < 0.8  || timerTimeElapsed > returnToSearchDelay))
+    else if (!targetDetected && (timerTimeElapsed > returnToSearchDelay || distToGoal < .25) && cnmInitialPositioningComplete)
     //else if(!targetDetected && distToGoal < 0.5 && timerTimeElapsed > returnToSearchDelay && cnmInitialPositioningComplete)
     {
 	std_msgs::String msg;
 	
 	if(cnmReverse || cnmCentering) { CNMReverseReset(); }
-
-        int position;
-        double distance;
-
-        goalLocation = searchController.search(currentLocationMap);
-
-        position = searchController.cnmGetSearchPosition();
-
-        distance = searchController.cnmGetSearchDistance();
 	
-        stringstream ss;
-        ss << "Traveling to point " << position << " in pattern:  " << distance << "DIST:  " << distToGoal;
-        msg.data = ss.str();
-        infoLogPublisher.publish(msg);
+	if(!centerSeen && CNMCurrentLocationAVG())
+	{
+            int position;
+            double distance;
+	    int rotations;
+    	    bool hasRotated = searchController.getHasDoneRotation();
+
+            goalLocation = searchController.search(cnmAVGCurrentLocation);
+
+            position = searchController.cnmGetSearchPosition();
+
+            distance = searchController.cnmGetSearchDistance();
+
+	    rotations = searchController.cnmGetNumRotations();
+	
+            stringstream ss;
+            ss << "Traveling to point " << position << " at " << distance << " meters; DIST: " << distToGoal << " Rotations: " << rotations;
+
+	    if(hasRotated) { ss << " " << "TRUE"; }
+	    else { ss << " " << "FALSE"; }
+            
+	    msg.data = ss.str();
+            infoLogPublisher.publish(msg);
+
+    	    timerStartTime = time(0);
+	}
     }
     else
     {
 	std_msgs::String msg;
 	stringstream ss;
-	ss << "Dist to goal not > 0.35;  It is " << distToGoal << "Time:  " << timerTimeElapsed;
+	ss << "Dist to goal is: " << distToGoal << "Time:  " << timerTimeElapsed << " can't transform";
         msg.data = ss.str();
         infoLogPublisher.publish(msg);	
     }
@@ -1272,7 +1287,6 @@ bool CNMTransformCode()
 
 bool CNMRotateCode()
 {
-
     //MUST TEST:  using currentLocation vs using currentLocationMap
 
     // Calculate the diffrence between current and desired
@@ -1375,7 +1389,7 @@ bool CNMPickupCode()
         {
             pickUpController.reset();
 
-            // assume target has been picked up by gripper
+            //assume target has been picked up by gripper
             targetCollected = true;
             result.pickedUp = false;
 
@@ -1482,7 +1496,6 @@ bool CNMDropOffCode()
 	    {
 		IWasLost = false;
 		searchController.AmILost(false);
-	    	searchController.doAnotherOctagon();
 	    }
 
     	    return false;
@@ -1601,7 +1614,6 @@ bool CNMDropOffCode()
 	//If we should have found the center by now
 	else if(atCenter && !centerSeen)
 	{
-
 	    std_msgs::String msg;
             msg.data = "Where am I? I don't see the Nest! Better Look!";
             infoLogPublisher.publish(msg);
@@ -1616,13 +1628,11 @@ bool CNMDropOffCode()
 
 	    goalLocation = searchController.search(currentLocationMap);
 	    stateMachineState = STATE_MACHINE_ROTATE;
-
 	}
 	else
  	{
 	    goalLocation = cnmCenterLocation;
             stateMachineState = STATE_MACHINE_ROTATE;
-            timerStartTime = time(0);
 	}
 
     return true;
@@ -1632,12 +1642,11 @@ bool CNMDropOffCode()
 bool CNMDropoffCalc()
 {
 
-    // calculate the euclidean distance between
-    // centerLocation and currentLocation
+    // calculate the euclidean distance between centerLocation and currentLocation
     float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
     //float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
-    float visDistToCenter = 0.5;
+    float visDistToCenter = 0.85;
 
     if(distToCenter > visDistToCenter) { return false; }
     else { return true; }
@@ -1698,14 +1707,11 @@ void CNMFirstBoot()
     if(centerSeen)
     {
         cnmFirstBootProtocol = false;
-        cnmInitialPositioningComplete = true;
 	cnmHasTurned180 = true;
 
         cnmInitialPositioningTimer.stop();
         cnmForwardTimer.stop();
 	cnmInitialWaitTimer.stop();
-
-        goalLocation = currentLocation;
     }
 
     //OTHERWISE-------
@@ -1857,7 +1863,6 @@ void CNMTargetAvoid()
             //START NEW TIMER
             cnmAvoidOtherTargetTimer.start();
         }
-
     }
 }
 
@@ -1870,6 +1875,17 @@ bool CNMCentered()
     //-----------------------------------
     const int amountOfTagsToSee = 8;
     bool seenEnoughTags = false;
+
+    if(!cnmCentering) 
+    { 
+	cnmCentering = true; 
+        cnmFinishedCenteringTimer.start();
+    }
+    else
+    {
+	cnmFinishedCenteringTimer.stop();
+        cnmFinishedCenteringTimer.start();
+    }
 
     goalLocation = currentLocation;
 
@@ -1992,6 +2008,13 @@ void CNMProjectCenter()
 void CNMAVGCenter()
 {   
 
+    if(resetMap)
+    {
+	resetMap = false;
+	maxedCenterArray = false;
+	centerIndex = 0;
+    }
+
     std_msgs::String msg;
     msg.data = "Averaging Center Locations";
     infoLogPublisher.publish(msg);
@@ -2042,7 +2065,38 @@ void CNMAVGCenter()
     searchController.setCenterLocation(cnmCenterLocation);
 }
 
+bool CNMCurrentLocationAVG()
+{
+    static int index = 0;
 
+    if(index < ASIZE)
+    {
+	avgCurrentCoordsX[index] = currentLocationMap.x;
+    	avgCurrentCoordsY[index] = currentLocationMap.y;
+
+	index++;
+
+	return false;
+    }
+    else
+    {
+	float x = 0, y = 0;
+	for(int i = 0; i < ASIZE; i++)
+	{
+	    x += avgCurrentCoordsX[i];
+	    y += avgCurrentCoordsY[i];
+	}
+
+	x = x/ASIZE;
+	y = y/ASIZE;
+
+	cnmAVGCurrentLocation.x = x;
+	cnmAVGCurrentLocation.y = y;
+
+	index = 0;
+	return true;
+    }
+}
 //CNM TIMER FUNCTIONS
 //-----------------------------------
 
@@ -2095,6 +2149,8 @@ void CNMInitialWait(const ros::TimerEvent &e)
 
     stringstream ss;
 
+    searchController.doAnotherOctagon();
+
     //Continue an interrupted search pattern
     //---------------------------------------------
     goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
@@ -2103,13 +2159,25 @@ void CNMInitialWait(const ros::TimerEvent &e)
     //---------------------------------------------
     stateMachineState = STATE_MACHINE_ROTATE;
 
-    int position = searchController.cnmGetSearchPosition();
+    int position;
+    double distance;
+    int rotations;
+    bool hasRotated = searchController.getHasDoneRotation();
 
-    double distance = searchController.cnmGetSearchDistance();
+    goalLocation = searchController.search(currentLocationMap);
 
-    //SPIT OUT NEXT POINT AND HOW FAR OUT WE ARE GOING
-    //---------------------------------------------
-    ss << "Traveling to point " << position << " in pattern:  " << distance;
+    position = searchController.cnmGetSearchPosition();
+
+    distance = searchController.cnmGetSearchDistance();
+
+    rotations = searchController.cnmGetNumRotations();
+
+    ss << "Traveling to point " << position << " at " << distance << " meters. " << " Rotations: " << rotations;
+
+    if(hasRotated) { ss << " " << "TRUE"; }
+    else { ss << " " << "FALSE"; }
+
+    std_msgs::String msg;
     msg.data = ss.str();
     infoLogPublisher.publish(msg);
 
@@ -2203,6 +2271,12 @@ void CNMTurn180(const ros::TimerEvent& event)
     std_msgs::String msg;
     stringstream ss;
 
+    CNMReverseReset();
+
+    if(!cnmInitialPositioningComplete) { cnmInitialPositioningComplete = true; }
+
+    searchController.doAnotherOctagon();
+
     //Continue an interrupted search pattern
     //---------------------------------------------
     goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
@@ -2211,17 +2285,28 @@ void CNMTurn180(const ros::TimerEvent& event)
     //---------------------------------------------
     stateMachineState = STATE_MACHINE_ROTATE;
 
-    int position = searchController.cnmGetSearchPosition();
-
-    double distance = searchController.cnmGetSearchDistance();
-
     //SPIT OUT NEXT POINT AND HOW FAR OUT WE ARE GOING
     //---------------------------------------------
-    ss << "Traveling to point " << position << " in pattern:  " << distance;
+    int position;
+    double distance;
+    int rotations;
+    bool hasRotated = searchController.getHasDoneRotation();
+
+    goalLocation = searchController.search(currentLocationMap);
+
+    position = searchController.cnmGetSearchPosition();
+
+    distance = searchController.cnmGetSearchDistance();
+
+    rotations = searchController.cnmGetNumRotations();
+
+    ss << "Traveling to point " << position << " at " << distance << " meters. " << " Rotations: " << rotations;
+
+    if(hasRotated) { ss << " " << "TRUE"; }
+    else { ss << " " << "FALSE"; }
+ 
     msg.data = ss.str();
     infoLogPublisher.publish(msg);
-
-    CNMReverseReset();
 
     cnmTurn180Timer.stop();
 }
