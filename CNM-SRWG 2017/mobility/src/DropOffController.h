@@ -10,8 +10,20 @@ class DropOffController
 {
 
 public:
+
+    //METHODS
+    //--------------------------------------
+
+    //CONSTRUCTOR
     DropOffController();
+
+    //bool DropOffCalcDistance();
+    //bool IsReadyToDropCalc(int cTagCount, int cTagcountRight, int cTagcountLeft, int &linearSpeed, int &angularSpeed, bool &tooManyTags);
+
+    //DESTRUCTOR
     ~DropOffController();
+
+    
 
 private:
 
