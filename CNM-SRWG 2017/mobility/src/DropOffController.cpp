@@ -5,20 +5,20 @@ SearchController DropOffSearch;
 
 DropOffController::DropOffController()
 {
-    cameraOffsetCorrection = 0.020; //meters
-    centeringTurn = 0.15; //radians
+    cameraOffsetCorrection = 0.020;         //meters
+    centeringTurn = 0.15;                   //radians
     seenEnoughCenterTagsCount = 13;
-    collectionPointVisualDistance = 0.50; //in meters
+    collectionPointVisualDistance = 0.50;   //in meters
     reachedCollectionPoint = false;
-    spinSize = 0.10; //in meters aka 10cm
-    addSpinSizeAmmount = 0.10; //in meters
+    spinSize = 0.10;                        //in meters aka 10cm
+    addSpinSizeAmmount = 0.10;              //in meters
 
     result.cmdVel = 0;
     result.angleError = 0;
     result.fingerAngle = -1;
     result.wristAngle = -1;
-    result.goalDriving = false; //set true for when driving is goal location oriented and false when it is target or time oriented
-    result.centerGoal; //goal that is center location or based upon the center location.
+    result.goalDriving = false;             //set true for when driving is goal location oriented and false when it is target or time oriented
+    result.centerGoal;                      //goal that is center location or based upon the center location.
     result.reset = false;
     result.timer = false;
 
@@ -43,12 +43,12 @@ DropOffController::DropOffController()
 
 void DropOffController::calculateDecision() {
 
-    result.goalDriving = true; //assume we are driving to the center unless we see targets or have seen targets.
+    result.goalDriving = true; //assumewe are driving to the center unless we see targets or have seen targets.
     result.timer = false;
 
 
-    //if we are in the routine for exiting the circle once we have dropped a block off and resetting all our flags
-    //to restart our search.
+    //if we are in the routine for exciting the circle once we have droppeda block off and reseting all our flags
+    //to resart our search.
     if(reachedCollectionPoint)
     {
         result.goalDriving = false;
@@ -56,27 +56,26 @@ void DropOffController::calculateDecision() {
         //timerStartTime was reset before we entered reachedCollectionPoint so
         //we can now use it for our timeing of 2 seconds
 
-        if (timerTimeElapsed >= 4)
+        if (timerTimeElapsed >= 2)
         {
             result.reset = true; //tell mobility to reset to search parameters
         }
-
         else if (timerTimeElapsed >= 1)
         {
             //open fingers
             float angle;
-            angle = M_PI_2;
+            angle = 4;
             result.fingerAngle = angle;
             angle= 0;
             result.wristAngle = angle; //raise wrist
 
-            result.cmdVel = -0.2;       //CNM CHANGED FROM .3
+            result.cmdVel = -0.3;
             result.angleError = 0.0;
         }
 
         isLost = false;
-        DropOffSearch.setCenterSeen(true);
-        DropOffSearch.setCenterLocation(centerLocation);
+        //DropOffSearch.setCenterSeen(true);
+        //DropOffSearch.setCenterLocation(centerLocation);
 
         return;
     }
@@ -103,8 +102,8 @@ void DropOffController::calculateDecision() {
 
         if(isLost == false)
         {
-            DropOffSearch.setCenterSeen(false);
-            DropOffSearch.setCenterLocation(currentLocation);
+            //DropOffSearch.setCenterSeen(false);
+            //DropOffSearch.setCenterLocation(currentLocation);
             isLost = true;
         }
 
@@ -192,8 +191,9 @@ void DropOffController::calculateDecision() {
         count = 0;
     }
     //was on approach to center and did not seenEnoughCenterTags
-    //for maxTimeAllowedWithoutSeeingCenterTags seconds so reset.
-    else if (centerApproach) {
+    //for maxTimeAllowedWithoutSeeingCenterTags seconds to reset.
+    else if (centerApproach)
+    {
         result.goalDriving = false;
         int maxTimeAllowedWithoutSeeingCenterTags = 6; //seconds
 
