@@ -1642,7 +1642,8 @@ bool CNMDropOffCode()
 bool CNMDropoffCalc()
 {
 
-    // calculate the euclidean distance between centerLocation and currentLocation
+    // calculate the euclidean distance between
+    // centerLocation and currentLocation
     float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
     //float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
