@@ -30,10 +30,12 @@ class SearchController
 
     int cnmGetSearchPosition();
 
+    int cnmGetNumRotations() { return cnmNumRotations; }
+
     double cnmGetSearchDistance();
 
     //SETS
-    bool doAnotherOctagon() { doneOneFullRotation = false; }
+    bool doAnotherOctagon() { doneOneFullRotation = false; cnmNumRotations = 0;}
 
     void AmILost(bool answer);
 
@@ -45,7 +47,6 @@ class SearchController
 
     //SEARCH ALOGIRTHM CALLS
     geometry_msgs::Pose2D search(geometry_msgs::Pose2D currentLocation);		// performs search pattern
-
     geometry_msgs::Pose2D continueInterruptedSearch(geometry_msgs::Pose2D currentLocation, geometry_msgs::Pose2D oldGoalLocation);	// continues search pattern after interruption
 
   private:
@@ -75,6 +76,7 @@ class SearchController
 
     //OTHER VARIABLES
     //--------------------------------------
+
     random_numbers::RandomNumberGenerator* rng;
     geometry_msgs::Pose2D cnmCenterLocation;
 
