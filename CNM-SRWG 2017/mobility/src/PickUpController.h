@@ -1,220 +1,52 @@
-#include "PickUpController.h"
+#ifndef PICKUPCONTROLLER_H
+#define PICKUPCONTROLLER_H
+#define HEADERFILE_H
+#include <apriltags_ros/AprilTagDetectionArray.h>
+#include <ros/ros.h>
 
-PickUpController::PickUpController() {
-    lockTarget = false;
-    timeOut = false;
-    nTargetsSeen = 0;
-    blockYawError = 0;
-    blockDist = 0;
-    td = 0;
+struct PickUpResult {
+  float cmdVel;
+  float angleError;
+  float fingerAngle;
+  float wristAngle;
+  bool pickedUp;
+  bool giveUp;
+};
 
-    result.pickedUp = false;
-    result.cmdVel = 0;
-    result.angleError = 0;
-    result.fingerAngle = -1;
-    result.wristAngle = -1;
-    result.giveUp = false;
+class PickUpController
+{
+ public:
+  PickUpController();
+  ~PickUpController();
 
-}
+  PickUpResult selectTarget(const apriltags_ros::AprilTagDetectionArray::ConstPtr& message);
+  PickUpResult pickUpSelectedTarget(bool blockBlock);
 
-PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
+  float getDist() {return blockDist;}
+  bool getLockTarget() {return lockTarget;}
+  float getTD() {return td;}
 
-    //threshold distance to be from the target block before attempting pickup
-    float targetDist = 0.14; //meters	//ORIGINALLY 0.22
+  void reset();
 
-    //GRIPPER OPTIMUM SETTING:
-    //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
-    //WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
+private:
+  //set true when the target block is less than targetDist so we continue attempting to pick it up rather than
+  //switching to another block that is in view
+  bool lockTarget; 
 
-    /*PickUpResult result;
-  result.pickedUp = false;
-  result.cmdVel = 0;
-  result.angleError = 0;
-  result.fingerAngle = -1;
-  result.wristAngle = -1;
-  result.pickedUp = false;
-  result.giveUp = false;*/
+  // Failsafe state. No legitimate behavior state. If in this state for too long return to searching as default behavior.
+  bool timeOut;
+  int nTargetsSeen;
+  ros::Time millTimer;
 
-    // millisecond time = current time if not in a counting state
-    if (!timeOut) millTimer = ros::Time::now();
+  //yaw error to target block 
+  double blockYawError;
+  
+  //distance to target block from front of robot
+  double blockDist;
 
-    //diffrence between current time and millisecond time
-    ros::Duration Tdiff = ros::Time::now() - millTimer;
-    float Td = Tdiff.sec + Tdiff.nsec/1000000000.0;
-    td = Td;
+  //struct for returning data to mobility
+  PickUpResult result;
 
-    if (nTargetsSeen == 0 && !lockTarget) //if not targets detected and a target has not been locked in
-    {
-        if(!timeOut) //if not in a counting state
-        {
-            result.cmdVel = 0.0;
-            result.angleError = 0.0;
-
-            timeOut = true;
-        }
-        //if in a counting state and has been counting for 1 second
-        else if (Td > 1 && Td < 2.5)
-        {
-            result.cmdVel = 0.1;    //-0.2
-            result.angleError = 0.0;
-        }
-    }
-    else if (blockDist > targetDist && !lockTarget) //if a target is detected but not locked, and not too close.
-    {
-        float vel = blockDist * 0.20;
-        if (vel < 0.1) vel = 0.1;
-        if (vel > 0.2) vel = 0.2;
-        result.cmdVel = vel;
-        result.angleError = -blockYawError/2;
-        timeOut = false;
-        nTargetsSeen = 0;
-        return result;
-    }
-    else if (!lockTarget) //if a target hasn't been locked lock it and enter a counting state while slowly driving forward.
-    {
-        lockTarget = true;
-        result.cmdVel = 0.18;
-        result.angleError = 0.0;
-        timeOut = true;
-    }
-    else if (Td > 1.8) //raise the wrist	(2.7)
-    {
-        result.cmdVel = -0.25;
-        result.angleError = 0.0;
-        result.wristAngle = 0;
-    }
-    else if (Td > 1.2) //close the fingers and stop driving	(1.8)
-    {
-        result.cmdVel = 0.0;
-        result.angleError = 0.0;
-        result.fingerAngle = 0;
-        return result;
-    }
-
-    if (Td > 2.4 && timeOut)
-    {
-/*        if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
-        {
-            result.pickedUp = true;
-        }
-	else
-	{
-            result.cmdVel = -0.15;
-            result.angleError = 0.0;
-            //set gripper
-            result.fingerAngle = 2;
-            result.wristAngle = 0;
-	}*/
-    }
-
-    if (Td > 3.5 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
-    {
-        if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
-        {
-            result.pickedUp = true;
-        }
-        else //recover begin looking for targets again
-        {
-    	    //GRIPPER OPTIMUM SETTING:
-	    //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
-	    //WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
-
-            lockTarget = false;
-            result.cmdVel = -0.15;
-            result.angleError = 0.0;
-            //set gripper
-            result.fingerAngle = 2;
-            result.wristAngle = 1.6;
-        }
-    }
-
-    if (Td > 5 && timeOut) //if no targets are found after too long a period go back to search pattern
-    {
-        result.giveUp = true;
-        lockTarget = false;
-        timeOut = false;
-        result.cmdVel = 0.0;
-        result.angleError = 0.0;
-    }
-
-    return result;
-}
-
-PickUpResult PickUpController::selectTarget(const apriltags_ros::AprilTagDetectionArray::ConstPtr& message) {
-
-    /*PickUpResult result;
-  result.pickedUp = false;
-  result.cmdVel = 0;
-  result.angleError = 0;
-  result.fingerAngle = -1;
-  result.wristAngle = -1;
-  result.giveUp = false;*/
-
-
-    nTargetsSeen = 0;
-    nTargetsSeen = message->detections.size();
-
-    double closest = std::numeric_limits<double>::max();
-    int target  = 0;
-    for (int i = 0; i < message->detections.size(); i++) //this loop selects the closest visible block to makes goals for it
-    {
-        geometry_msgs::PoseStamped tagPose = message->detections[i].pose;
-        double test = hypot(hypot(tagPose.pose.position.x, tagPose.pose.position.y), tagPose.pose.position.z); //absolute distance to block from camera lense
-
-        if (closest > test)
-        {
-            target = i;
-            closest = test;
-            blockDist = hypot(tagPose.pose.position.z, tagPose.pose.position.y); //distance from bottom center of chassis ignoring height.
-            blockDist = sqrt(blockDist*blockDist - 0.195*0.195);
-            blockYawError = atan((tagPose.pose.position.x + 0.020)/blockDist)*1.05; //angle to block from bottom center of chassis on the horizontal.
-        }
-    }
-    if ( blockYawError > 10) blockYawError = 10; //limits block angle error to prevent overspeed from PID.
-    if ( blockYawError < - 10) blockYawError = -10; //due to detetionropping out when moveing quickly
-
-    geometry_msgs::PoseStamped tagPose = message->detections[target].pose;
-
-    //if target is close enough
-    //diffrence between current time and millisecond time
-    ros::Duration Tdiff = ros::Time::now() - millTimer;
-    float Td = Tdiff.sec + Tdiff.nsec/1000000000;
-
-    if (hypot(hypot(tagPose.pose.position.x, tagPose.pose.position.y), tagPose.pose.position.z) < 0.13 && Td < 3.8) {
-        result.pickedUp = true;
-    }
-
-    //Lower wrist and open fingures if no locked targt
-    else if (!lockTarget)
-    {
-        //GRIPPER OPTIMUM SETTING:
-	//FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
-	//WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
-
-        //set gripper;
-        result.fingerAngle = 2.0;
-        result.wristAngle = 1.6;  //1.25
-    }
-
-    return result;
-}
-
-void PickUpController::reset() {
-    result.pickedUp = false;
-    lockTarget = false;
-    timeOut = false;
-    nTargetsSeen = 0;
-    blockYawError = 0;
-    blockDist = 0;
-    td = 0;
-
-    result.pickedUp = false;
-    result.cmdVel = 0;
-    result.angleError = 0;
-    result.fingerAngle = -1;
-    result.wristAngle = -1;
-    result.giveUp = false;
-}
-
-PickUpController::~PickUpController() {
-}
+  float td;
+};
+#endif // end header define
