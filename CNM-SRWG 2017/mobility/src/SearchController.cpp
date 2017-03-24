@@ -11,7 +11,7 @@ SearchController::SearchController()
 
     //CNM VARIABLES
     //--------------------------------------
-    searchLoop = 0;//rng->uniformInteger(0, 8);                 //DEFAULT TO 0, uncomment for random point in loop between 0 and 8
+    searchLoop = 1;//rng->uniformInteger(0, 8);                 //DEFAULT TO 0, uncomment for random point in loop between 0 and 8
     searchCounter = .5;                                         //default value for search distance is .5
     searchDist = .35;                                           //how much to add to our search pattern (.2 is roughly the width of a swarmie)
 
@@ -90,124 +90,124 @@ geometry_msgs::Pose2D SearchController::SearchRight(geometry_msgs::Pose2D curren
  
       //if for some reason searchLoop goes out of bounds, reset
       //---------------------------------------------
-      if (searchLoop < 0 || searchLoop > 9) { searchLoop = 0; }
+    if (searchLoop < 0 || searchLoop > 9) { searchLoop = 0; }
 
-      //This algorithm uses the trigonometic coordinates for the unit circle to navigate around a central point
-      //using the center location as the point where we pivot around, as opposed to the current location, allows
-      //us to be more precise
+    //This algorithm uses the trigonometic coordinates for the unit circle to navigate around a central point
+    //using the center location as the point where we pivot around, as opposed to the current location, allows
+    //us to be more precise
 
-      //between 11PI/6 and 2PI
-      //---------------------------------------------
-      if (searchLoop == 0)
-      {
+    //Same as point 1, but increments outwards
+    //---------------------------------------------
+    if (searchLoop == 0)
+    {
 
-	  checkIfIncrementing();
+	checkIfIncrementing();
 
-          goalLocation.x = cnmCenterLocation.x + searchCounter;
-          goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-          goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+	goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-        }
-        else if (searchLoop == 9)
-        {
+    }
+    else if (searchLoop == 9)
+    {
 
-          if(!avoidedObstacle) { searchLoop = 0; }
+	if(!avoidedObstacle) { searchLoop = 0; }
 
-          goalLocation.x = cnmCenterLocation.x + searchCounter;
-          goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-          goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 0 and PI/6
-          //---------------------------------------------
-          else if (searchLoop == 8)
-          {
-              if(!avoidedObstacle) { searchLoop = 0; }
+    }
+    //between 0 and PI/6
+    //---------------------------------------------
+    else if (searchLoop == 8)
+    {
+	if(!avoidedObstacle) { searchLoop = 0; }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter;
-              goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 2PI/6 and PI/2
-          //---------------------------------------------
-          else if (searchLoop == 7)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 2PI/6 and PI/2
+    //---------------------------------------------
+    else if (searchLoop == 7)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y + searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y + searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between PI/2 and 4PI/6
-          //---------------------------------------------
-          else if (searchLoop == 6)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between PI/2 and 4PI/6
+    //---------------------------------------------
+    else if (searchLoop == 6)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y + searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y + searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 5PI/6 and PI
-          //---------------------------------------------
-          else if (searchLoop == 5)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 5PI/6 and PI
+    //---------------------------------------------
+    else if (searchLoop == 5)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter;
-              goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between PI and 7PI/6
-          //---------------------------------------------
-          else if (searchLoop == 4)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between PI and 7PI/6
+    //---------------------------------------------
+    else if (searchLoop == 4)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter;
-              goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter;
+        goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 7PI/6 and 8PI/6
-          //---------------------------------------------
-          else if (searchLoop == 3)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 7PI/6 and 8PI/6
+    //---------------------------------------------
+    else if (searchLoop == 3)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y - searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y - searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 9PI/6 and 10PI/6
-          //---------------------------------------------
-          else if (searchLoop == 2)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 9PI/6 and 10PI/6
+    //---------------------------------------------
+    else if (searchLoop == 2)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y - searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y - searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 10PI/6 and 11PI/6
-          //---------------------------------------------
-          else if (searchLoop == 1)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 10PI/6 and 11PI/6
+    //---------------------------------------------
+    else if (searchLoop == 1)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter;
-              goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
+    }
 
-      return goalLocation;
+    return goalLocation;
 
 }
 
@@ -215,128 +215,129 @@ geometry_msgs::Pose2D SearchController::SearchLeft(geometry_msgs::Pose2D current
 {
     geometry_msgs::Pose2D goalLocation;
 
-      //if for some reason searchLoop goes out of bounds, reset
-      //---------------------------------------------
-      if (searchLoop < 0 || searchLoop > 9) { searchLoop = 0; }
+    //if for some reason searchLoop goes out of bounds, reset
+    //---------------------------------------------
+    if (searchLoop < 0 || searchLoop > 9) { searchLoop = 0; }
 
-      //This algorithm uses the trigonometic coordinates for the unit circle to navigate around a central point
-      //using the center location as the point where we pivot around, as opposed to the current location, allows
-      //us to be more precise
+    //This algorithm uses the trigonometic coordinates for the unit circle to navigate around a central point
+    //using the center location as the point where we pivot around, as opposed to the current location, allows
+    //us to be more precise
 
-      //between 11PI/6 and 2PI
-      //---------------------------------------------
-      if (searchLoop == 0)
-      {
+    //Same as point 1, but increments outwards
+    //---------------------------------------------
+    if (searchLoop == 0)
+    {
+	checkIfIncrementing();
 
-	  checkIfIncrementing();
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          goalLocation.x = cnmCenterLocation.x + searchCounter;
-          goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-          goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+	//Should SKIP point 1 entirely and go to point 2.  Point 1 and point 0 are the same, retained only for
+	//rovers continueInterruptedSearch (so they don't try to increment when picking a point).  This is ONLY 
+	//valid for the left rotation as the right rotation has a different first point
 
+    }
 
-       }
+    //between 0 and PI/6
+    //---------------------------------------------
+    else if (searchLoop == 1)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-          //between 0 and PI/6
-          //---------------------------------------------
-          else if (searchLoop == 1)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+    }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter;
-              goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
-          }
-          //between 2PI/6 and PI/2
-          //---------------------------------------------
-          else if (searchLoop == 2)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    //between 2PI/6 and PI/2
+    //---------------------------------------------
+    else if (searchLoop == 2)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y + searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y + searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between PI/2 and 4PI/6
-          //---------------------------------------------
-          else if (searchLoop == 3)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between PI/2 and 4PI/6
+    //---------------------------------------------
+    else if (searchLoop == 3)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y + searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y + searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 5PI/6 and PI
-          //---------------------------------------------
-          else if (searchLoop == 4)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 5PI/6 and PI
+    //---------------------------------------------
+    else if (searchLoop == 4)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter;
-              goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between PI and 7PI/6
-          //---------------------------------------------
-          else if (searchLoop == 5)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between PI and 7PI/6
+    //---------------------------------------------
+    else if (searchLoop == 5)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter;
-              goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+	goalLocation.x = cnmCenterLocation.x - searchCounter;
+        goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 7PI/6 and 8PI/6
-          //---------------------------------------------
-          else if (searchLoop == 6)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 7PI/6 and 8PI/6
+    //---------------------------------------------
+    else if (searchLoop == 6)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y - searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x - searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y - searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 9PI/6 and 10PI/6
-          //---------------------------------------------
-          else if (searchLoop == 7)
-          {
-              if(!avoidedObstacle) { searchLoop++; }
+    }
+    //between 9PI/6 and 10PI/6
+    //---------------------------------------------
+    else if (searchLoop == 7)
+    {
+	if(!avoidedObstacle) { searchLoop++; }
 
-              goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
-              goalLocation.y = cnmCenterLocation.y - searchCounter;
-              goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter / 2;
+        goalLocation.y = cnmCenterLocation.y - searchCounter;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
-          //between 10PI/6 and 11PI/6
-          //---------------------------------------------
-          else if (searchLoop == 8)
-          {
+    }
+    //between 10PI/6 and 11PI/6
+    //---------------------------------------------
+    else if (searchLoop == 8)
+    {
 
-            if(!avoidedObstacle) { searchLoop++; }
+	if(!avoidedObstacle) { searchLoop++; }
 
-            goalLocation.x = cnmCenterLocation.x + searchCounter;
-            goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
-            goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y - searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
 
-          }
+    }
+    //between 0 and PI/6
+    //---------------------------------------------
+    else if (searchLoop == 9)
+    {
+	if(!avoidedObstacle) { searchLoop = 0; }
 
-      //between 0 and PI/6
-      //---------------------------------------------
-      else if (searchLoop == 9)
-      {
-          if(!avoidedObstacle) { searchLoop = 0; }
-
-          goalLocation.x = cnmCenterLocation.x + searchCounter;
-          goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
-          goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
-
-      }
+        goalLocation.x = cnmCenterLocation.x + searchCounter;
+        goalLocation.y = cnmCenterLocation.y + searchCounter / 2;
+        goalLocation.theta = atan2((goalLocation.y - currentLocation.y), (goalLocation.x - currentLocation.x));
+    }
 
       return goalLocation;
 }
@@ -479,23 +480,20 @@ void SearchController::RightSearch(double absLocationAngle)
 
 void SearchController::checkIfIncrementing()
 {
-    //Check to see if we have ever finished our first rotation
-    if(cnmNumRotations >= 9 && !doneFirstRotation) { doneFirstRotation = true; }
 
     //check to see if we have done enough parts of the octagon to warrant incrementing
-    else if(cnmNumRotations < minNumRotations && doneFirstRotation) { doneOneFullRotation = false; }
-    else { doneOneFullRotation = true; }
+    if(cnmNumRotations > 6) { doneOneFullRotation = true; }
 
     //if we haven't tried to avoid an obstacle or can increment
     if(!avoidedObstacle && doneOneFullRotation) 
     {
-	searchCounter = searchCounter + searchDist;		//increment search counter
-
-	int dist = floor(searchCounter);			//check to see if incrementing will have us start alternating
-
-    	if(dist % 2 != 0 && dist > 2) { searchLoop++; }		//right search is fine to increment +1
-	else { searchLoop += 2; } 				//left search needs to start at point 2 because point 0 and 1 are the SAME point
+	searchCounter = searchCounter + searchDist;	//increment search counter	
     }
+
+    int dist = floor(searchCounter);			//check to see if incrementing will have us start alternating
+
+    if(dist % 2 != 0 && dist > 2) { searchLoop++; }	//right search is fine to increment +1
+    else { searchLoop += 2; } 				//left search needs to start at point 2 because point 0 and 1 are the SAME point
 
     //check to see if we need reset value
     if(doneOneFullRotation == true) { doneOneFullRotation = false; }
