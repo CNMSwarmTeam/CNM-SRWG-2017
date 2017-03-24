@@ -1,297 +1,220 @@
-#include "DropOffController.h"
+#include "PickUpController.h"
 
-bool isLost;
-SearchController DropOffSearch;
+PickUpController::PickUpController() {
+    lockTarget = false;
+    timeOut = false;
+    nTargetsSeen = 0;
+    blockYawError = 0;
+    blockDist = 0;
+    td = 0;
 
-DropOffController::DropOffController()
-{
-    cameraOffsetCorrection = 0.020;         //meters
-    centeringTurn = 0.15;                   //radians
-    seenEnoughCenterTagsCount = 13;
-    collectionPointVisualDistance = 0.50;   //in meters
-    reachedCollectionPoint = false;
-    spinSize = 0.10;                        //in meters aka 10cm
-    addSpinSizeAmmount = 0.10;              //in meters
-
+    result.pickedUp = false;
     result.cmdVel = 0;
     result.angleError = 0;
     result.fingerAngle = -1;
     result.wristAngle = -1;
-    result.goalDriving = false;             //set true for when driving is goal location oriented and false when it is target or time oriented
-    result.centerGoal;                      //goal that is center location or based upon the center location.
-    result.reset = false;
-    result.timer = false;
+    result.giveUp = false;
 
-    left = false;
-    right = false;
-
-    circularCenterSearching = false;
-    spinner = 0;
-    centerApproach = false;
-    timeWithoutSeeingEnoughCenterTags = time(0);
-    seenEnoughCenterTags = false;
-    centerSeen = false;
-    timeElapsedSinceTimeSinceSeeingEnoughCenterTags = time(0);
-    circularCenterSearching = false;
-    prevCount = 0;
-
-    searchVelocity = 0.15;
-
-    isLost = false;
 }
 
+PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
-void DropOffController::calculateDecision() {
+    //threshold distance to be from the target block before attempting pickup
+    float targetDist = 0.14; //meters	//ORIGINALLY 0.22
 
-    result.goalDriving = true; //assumewe are driving to the center unless we see targets or have seen targets.
-    result.timer = false;
+    //GRIPPER OPTIMUM SETTING:
+    //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+    //WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
 
+    /*PickUpResult result;
+  result.pickedUp = false;
+  result.cmdVel = 0;
+  result.angleError = 0;
+  result.fingerAngle = -1;
+  result.wristAngle = -1;
+  result.pickedUp = false;
+  result.giveUp = false;*/
 
-    //if we are in the routine for exciting the circle once we have droppeda block off and reseting all our flags
-    //to resart our search.
-    if(reachedCollectionPoint)
+    // millisecond time = current time if not in a counting state
+    if (!timeOut) millTimer = ros::Time::now();
+
+    //diffrence between current time and millisecond time
+    ros::Duration Tdiff = ros::Time::now() - millTimer;
+    float Td = Tdiff.sec + Tdiff.nsec/1000000000.0;
+    td = Td;
+
+    if (nTargetsSeen == 0 && !lockTarget) //if not targets detected and a target has not been locked in
     {
-        result.goalDriving = false;
-
-        //timerStartTime was reset before we entered reachedCollectionPoint so
-        //we can now use it for our timeing of 2 seconds
-
-        if (timerTimeElapsed >= 2)
+        if(!timeOut) //if not in a counting state
         {
-            result.reset = true; //tell mobility to reset to search parameters
+            result.cmdVel = 0.0;
+            result.angleError = 0.0;
+
+            timeOut = true;
         }
-        else if (timerTimeElapsed >= 1)
+        //if in a counting state and has been counting for 1 second
+        else if (Td > 1 && Td < 2.5)
         {
-            //open fingers
-            float angle;
-            angle = 4;
-            result.fingerAngle = angle;
-            angle= 0;
-            result.wristAngle = angle; //raise wrist
-
-            result.cmdVel = -0.3;
+            result.cmdVel = 0.1;    //-0.2
             result.angleError = 0.0;
         }
-
-        isLost = false;
-        //DropOffSearch.setCenterSeen(true);
-        //DropOffSearch.setCenterLocation(centerLocation);
-
-        return;
+    }
+    else if (blockDist > targetDist && !lockTarget) //if a target is detected but not locked, and not too close.
+    {
+        float vel = blockDist * 0.20;
+        if (vel < 0.1) vel = 0.1;
+        if (vel > 0.2) vel = 0.2;
+        result.cmdVel = vel;
+        result.angleError = -blockYawError/2;
+        timeOut = false;
+        nTargetsSeen = 0;
+        return result;
+    }
+    else if (!lockTarget) //if a target hasn't been locked lock it and enter a counting state while slowly driving forward.
+    {
+        lockTarget = true;
+        result.cmdVel = 0.18;
+        result.angleError = 0.0;
+        timeOut = true;
+    }
+    else if (Td > 1.8) //raise the wrist	(2.7)
+    {
+        result.cmdVel = -0.25;
+        result.angleError = 0.0;
+        result.wristAngle = 0;
+    }
+    else if (Td > 1.2) //close the fingers and stop driving	(1.8)
+    {
+        result.cmdVel = 0.0;
+        result.angleError = 0.0;
+        result.fingerAngle = 0;
+        return result;
     }
 
-    //check to see if we are driving to the center location or if we need to drive in a circle and look.
-    if (distanceToCenter > collectionPointVisualDistance && !circularCenterSearching && count == 0)
+    if (Td > 2.4 && timeOut)
     {
-        //set angle to center as goal heading
-        result.centerGoal.theta = atan2(centerLocation.y - currentLocation.y, centerLocation.x - currentLocation.x);
-
-        //set center as goal position
-        result.centerGoal.x = centerLocation.x;
-        result.centerGoal.y = centerLocation.y;
-        //spinWasTrue = true; only turn on for random walk to center
-    }
-    else if (timerTimeElapsed >=5)//spin search for center
-    {
-        //sets a goal that is 60cm from the centerLocation and spinner
-        //radians counterclockwise from being purly along the x-axis.
-
-//        result.centerGoal.x = centerLocation.x + (spinSize + addSpinSize) * cos(spinner);
-//        result.centerGoal.y = centerLocation.y + (spinSize + addSpinSize) * sin(spinner);
-//        result.centerGoal.theta = atan2(result.centerGoal.y - currentLocation.y, result.centerGoal.x - currentLocation.x);
-
-        if(isLost == false)
+/*        if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
         {
-            //DropOffSearch.setCenterSeen(false);
-            //DropOffSearch.setCenterLocation(currentLocation);
-            isLost = true;
+            result.pickedUp = true;
         }
-
-        result.centerGoal = DropOffSearch.search(currentLocation);
-
-//        spinner += 45*(M_PI/180); //add 45 degrees in radians to spinner.
-//        if (spinner > 2*M_PI)
-//        {
-//            spinner -= 2*M_PI;
-//            addSpinSize += addSpinSizeAmmount;
-//        }
-
-        circularCenterSearching = true;
-        //safety flag to prevent us trying to drive back to the
-        //center since we have a block with us and the above point is
-        //greater than collectionPointVisualDistance from the center.
-    }
-
-
-    //reset timeWithoutSeeingEnoughCenterTags timout timer to current time
-    if ((!centerApproach && !seenEnoughCenterTags) || (count > 0 && !seenEnoughCenterTags)) timeWithoutSeeingEnoughCenterTags = time(0);
-
-    if (count > 0 || seenEnoughCenterTags || prevCount > 0) //if we have a target and the center is located drive towards it.
-    {
-        centerSeen = true;
-        result.goalDriving = false;
-
-        if (seenEnoughCenterTags) //if we have seen enough tags
-        {
-            if ((countLeft-5) > countRight) //and there are too many on the left
-            {
-                right = false; //then we say non on the right to cause us to turn right
-            }
-            else if ((countRight-5) > countLeft)
-            {
-                left = false; //or left in this case
-            }
-        }
-
-        float turnDirection = 1;
-        //reverse tag rejection when we have seen enough tags that we are on a
-        //trajectory in to the square we dont want to follow an edge.
-        if (seenEnoughCenterTags) turnDirection = -1;
-
-
-        //otherwise turn till tags on both sides of image then drive straight
-        if (left && right) {
-            result.cmdVel = searchVelocity;
+	else
+	{
+            result.cmdVel = -0.15;
             result.angleError = 0.0;
-        }
-        else if (right) {
-            result.cmdVel = -0.1 * turnDirection;
-            result.angleError = -centeringTurn*turnDirection;
-        }
-        else if (left){
-            result.cmdVel = -0.1 * turnDirection;
-            result.angleError = centeringTurn*turnDirection;
-        }
-        else
-        {
-            result.cmdVel = searchVelocity;
-            result.angleError = 0.0;
-        }
-
-        //must see greater than this many tags before assuming we are driving into the center and not along an edge.
-        if (count > seenEnoughCenterTagsCount)
-        {
-            seenEnoughCenterTags = true; //we have driven far enough forward to be in the circle.
-            timeWithoutSeeingEnoughCenterTags = time(0);
-        }
-        if (count > 0) //reset gaurd to prevent drop offs due to loosing tracking on tags for a frame or 2.
-        {
-            timeWithoutSeeingEnoughCenterTags = time(0);
-        }
-        //time since we dropped below countGuard tags
-        timeElapsedSinceTimeSinceSeeingEnoughCenterTags = time(0) - timeWithoutSeeingEnoughCenterTags;
-
-        //we have driven far enough forward to have passed over the circle.
-        if (count == 0 && seenEnoughCenterTags && timeElapsedSinceTimeSinceSeeingEnoughCenterTags > 1) {
-            centerSeen = false;
-        }
-
-        centerApproach = true;
-        prevCount = count;
-        count = 0;
+            //set gripper
+            result.fingerAngle = 2;
+            result.wristAngle = 0;
+	}*/
     }
-    //was on approach to center and did not seenEnoughCenterTags
-    //for maxTimeAllowedWithoutSeeingCenterTags seconds to reset.
-    else if (centerApproach)
+
+    if (Td > 3.5 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
     {
-        result.goalDriving = false;
-        int maxTimeAllowedWithoutSeeingCenterTags = 6; //seconds
-
-        timeElapsedSinceTimeSinceSeeingEnoughCenterTags = time(0) - timeWithoutSeeingEnoughCenterTags;
-        if (timeElapsedSinceTimeSinceSeeingEnoughCenterTags > maxTimeAllowedWithoutSeeingCenterTags)
+        if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
         {
-            //go back to drive to center base location instead of drop off attempt
-            reachedCollectionPoint = false;
-            seenEnoughCenterTags = false;
-            centerApproach = false;
+            result.pickedUp = true;
         }
-        else
+        else //recover begin looking for targets again
         {
-            result.cmdVel = searchVelocity;
+    	    //GRIPPER OPTIMUM SETTING:
+	    //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+	    //WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
+
+            lockTarget = false;
+            result.cmdVel = -0.15;
             result.angleError = 0.0;
+            //set gripper
+            result.fingerAngle = 2;
+            result.wristAngle = 1.6;
         }
-
-        right = false;
-        left = false;
-        count = 0;
-        centerSeen = false;
-        return;
-
     }
 
-    if (!centerSeen && seenEnoughCenterTags)
+    if (Td > 5 && timeOut) //if no targets are found after too long a period go back to search pattern
     {
-        reachedCollectionPoint = true;
-        timerStartTime = time(0);
-        result.goalDriving = false;
-        centerApproach = false;
-        result.timer = true;
+        result.giveUp = true;
+        lockTarget = false;
+        timeOut = false;
+        result.cmdVel = 0.0;
+        result.angleError = 0.0;
     }
 
-    return;
+    return result;
 }
 
+PickUpResult PickUpController::selectTarget(const apriltags_ros::AprilTagDetectionArray::ConstPtr& message) {
 
-void DropOffController::setDataLocations(geometry_msgs::Pose2D center, geometry_msgs::Pose2D current, float sync)
-{
-    centerLocation = center;
-    currentLocation = current;
-    timerTimeElapsed = sync;
+    /*PickUpResult result;
+  result.pickedUp = false;
+  result.cmdVel = 0;
+  result.angleError = 0;
+  result.fingerAngle = -1;
+  result.wristAngle = -1;
+  result.giveUp = false;*/
 
-    if(!isLost) { DropOffSearch.setCenterLocation(center); }
 
-    calculateDecision();
+    nTargetsSeen = 0;
+    nTargetsSeen = message->detections.size();
+
+    double closest = std::numeric_limits<double>::max();
+    int target  = 0;
+    for (int i = 0; i < message->detections.size(); i++) //this loop selects the closest visible block to makes goals for it
+    {
+        geometry_msgs::PoseStamped tagPose = message->detections[i].pose;
+        double test = hypot(hypot(tagPose.pose.position.x, tagPose.pose.position.y), tagPose.pose.position.z); //absolute distance to block from camera lense
+
+        if (closest > test)
+        {
+            target = i;
+            closest = test;
+            blockDist = hypot(tagPose.pose.position.z, tagPose.pose.position.y); //distance from bottom center of chassis ignoring height.
+            blockDist = sqrt(blockDist*blockDist - 0.195*0.195);
+            blockYawError = atan((tagPose.pose.position.x + 0.020)/blockDist)*1.05; //angle to block from bottom center of chassis on the horizontal.
+        }
+    }
+    if ( blockYawError > 10) blockYawError = 10; //limits block angle error to prevent overspeed from PID.
+    if ( blockYawError < - 10) blockYawError = -10; //due to detetionropping out when moveing quickly
+
+    geometry_msgs::PoseStamped tagPose = message->detections[target].pose;
+
+    //if target is close enough
+    //diffrence between current time and millisecond time
+    ros::Duration Tdiff = ros::Time::now() - millTimer;
+    float Td = Tdiff.sec + Tdiff.nsec/1000000000;
+
+    if (hypot(hypot(tagPose.pose.position.x, tagPose.pose.position.y), tagPose.pose.position.z) < 0.13 && Td < 3.8) {
+        result.pickedUp = true;
+    }
+
+    //Lower wrist and open fingures if no locked targt
+    else if (!lockTarget)
+    {
+        //GRIPPER OPTIMUM SETTING:
+	//FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
+	//WRIST:    0 - 1.6    (Any further and will scrape ground if hits bumps)
+
+        //set gripper;
+        result.fingerAngle = 2.0;
+        result.wristAngle = 1.6;  //1.25
+    }
+
+    return result;
 }
 
+void PickUpController::reset() {
+    result.pickedUp = false;
+    lockTarget = false;
+    timeOut = false;
+    nTargetsSeen = 0;
+    blockYawError = 0;
+    blockDist = 0;
+    td = 0;
 
-void DropOffController::reset()
-{
+    result.pickedUp = false;
     result.cmdVel = 0;
     result.angleError = 0;
     result.fingerAngle = -1;
     result.wristAngle = -1;
-    result.goalDriving = false; //set true for when driving is goal location oriented and false when it is target or time oriented
-    result.centerGoal; //goal that is center location or based upon the center location.
-    result.reset = false;
-    spinner = 0;
-    addSpinSize = 0;
-    prevCount = 0;
-
-    left = false;
-    right = false;
-    centerSeen = false;
-
-    //reset flags
-    reachedCollectionPoint = false;
-    seenEnoughCenterTags = false;
-    circularCenterSearching = false;
-
+    result.giveUp = false;
 }
 
-void DropOffController::setDataTargets(int ccount, double lleft, double rright)
-{
-    count = ccount;
-    if (rright > 0)
-    {
-        right = true;
-    }
-    else
-    {
-        right = false;
-    }
-    if (lleft > 0)
-    {
-        left = true;
-    }
-    else
-    {
-        left = false;
-    }
-
-    countLeft = lleft;
-    countRight = rright;
-}
-
-DropOffController::~DropOffController() {
-
+PickUpController::~PickUpController() {
 }
