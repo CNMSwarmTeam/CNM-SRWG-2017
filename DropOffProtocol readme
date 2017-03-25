@@ -1,0 +1,56 @@
+line 125 ros::Publisher dropProtocolPub;			//dropOffProtocol
+ros::Publisher finishedProtocolPub; 
+
+line 135 ros::Subscriber dropProtocolSub;		//dropOffProtocol
+ros::Subscriber finishedProtocolSub;
+
+
+line 169 void dropProtocolHandler(const std_msgs::String& msg);			//dropOffProtocol
+void finishedProtocolHandler(const std_msgs::String& msg);
+
+line 259 bool isDroppingOff = false; //dropOffProtocol
+
+line 451    dropProtocolSub = mNH.subscribe("dropBool", 1000, &dropProtocolHandler);	//dropOffProtocol
+    finishedProtocolSub = mNH.subscribe("dropFinished", 1000, &finishedProtocolHandler);
+
+line 460    dropProtocolPub = mNH.advertise<std_msgs::String>("dropBool", 1000);		//dropOffProtocol
+    finishedProtocolPub = mNH.advertise<std_msgs::String>("dropFinished", 1000);
+
+line 1508            finishedProtocolPub.publish(msg);		//dropOffProtocol
+
+line 1620  		dropProtocolPub.publish(msg); 	//triggers waitToDrop	//dropOffProtocol
+
+line 2485 void dropProtocolHandler(const std_msgs::String& msg)		//dropOffProtocol
+{
+	waitToDrop = true;
+
+    if(waitToDrop == true && isDroppingOff == true && targetCollected == true)	//allow to continue	//dropOffProtocol
+    {
+	std_msgs::String msg;
+        msg.data = "allowed to proceed";
+        infoLogPublisher.publish(msg);
+    }
+
+    if(waitToDrop == true && isDroppingOff == false && targetCollected == true)  // stop movement here, resume when waitToDrop = false
+    {
+ 	std_msgs::String msg;
+        msg.data = "I should be waiting"; 
+        infoLogPublisher.publish(msg);
+    }
+
+    if(waitToDrop == true && targetCollected == false) // allow to continue, but notified swarmie at center
+    {
+ 	std_msgs::String msg;
+        msg.data = "I don't care.";
+        infoLogPublisher.publish(msg);
+    }
+}
+
+void finishedProtocolHandler(const std_msgs::String& msg) //give instruction if have block, waitToDrop = true
+{
+	waitToDrop = false;
+
+	std_msgs::String msgd;
+        msgd.data = "waitToDrop turned to false";
+        infoLogPublisher.publish(msgd);
+}
