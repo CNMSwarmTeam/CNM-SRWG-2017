@@ -16,6 +16,16 @@ double collisionDistance = 0.6; //meters the ultrasonic detectors will flag obst
 string publishedName;
 char host[128];
 
+
+ros::Duration cnm1SecTime(0.25);
+ros::Timer obstacleTimer;
+void IsAnObstacle(const ros::TimerEvent& event);
+
+bool leftObst = false;
+bool rcObst = false;
+bool blockObst = false;
+bool timerDone = false;
+
 //Publishers
 ros::Publisher obstaclePublish;
 
@@ -39,6 +49,9 @@ int main(int argc, char** argv) {
     
     obstaclePublish = oNH.advertise<std_msgs::UInt8>((publishedName + "/obstacle"), 10);
     
+    obstacleTimer = oNH.createTimer(cnm1SecTime, IsAnObstacle, true);
+    obstacleTimer.stop();
+    
     message_filters::Subscriber<sensor_msgs::Range> sonarLeftSubscriber(oNH, (publishedName + "/sonarLeft"), 10);
     message_filters::Subscriber<sensor_msgs::Range> sonarCenterSubscriber(oNH, (publishedName + "/sonarCenter"), 10);
     message_filters::Subscriber<sensor_msgs::Range> sonarRightSubscriber(oNH, (publishedName + "/sonarRight"), 10);
@@ -56,14 +69,34 @@ int main(int argc, char** argv) {
 void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_msgs::Range::ConstPtr& sonarCenter, const sensor_msgs::Range::ConstPtr& sonarRight) {
 	std_msgs::UInt8 obstacleMode;
 	
-	if ((sonarLeft->range > collisionDistance) && (sonarCenter->range > collisionDistance) && (sonarRight->range > collisionDistance)) {
+	if ((sonarLeft->range > collisionDistance) && (sonarCenter->range > collisionDistance) && (sonarRight->range > collisionDistance)) 		{
 		obstacleMode.data = 0; //no collision
+		obstacleTimer.stop();
+		timerDone = false;
 	}
-	else if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) {
-		obstacleMode.data = 1; //collision on right side
+	else if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) 
+	{
+		if(timerDone) 
+		{
+		    obstacleMode.data = 1; //collision on right side
+		}
+		else
+		{
+		    obstacleTimer.start();
+		    obstacleMode.data = 0;
+		}
 	}
-	else {
-		obstacleMode.data = 2; //collision in front or on left side
+	else 
+	{
+		if(timerDone) 
+		{
+		    obstacleMode.data = 2; //collision in front or on left side
+		}
+		else
+		{
+		    obstacleTimer.start();
+		    obstacleMode.data = 0;
+		}
 	}
 	if (sonarCenter->range < 0.12) //block in front of center unltrasound.
 	{
@@ -73,3 +106,10 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
         obstaclePublish.publish(obstacleMode);
 }
 
+void IsAnObstacle(const ros::TimerEvent& event)
+{
+
+    timerDone = true;
+    obstacleTimer.stop();
+
+}
