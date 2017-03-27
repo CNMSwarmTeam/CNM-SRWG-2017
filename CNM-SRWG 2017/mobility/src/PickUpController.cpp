@@ -1,6 +1,7 @@
 #include "PickUpController.h"
 
-PickUpController::PickUpController() {
+PickUpController::PickUpController() 
+{
     lockTarget = false;
     timeOut = false;
     nTargetsSeen = 0;
@@ -14,13 +15,12 @@ PickUpController::PickUpController() {
     result.fingerAngle = -1;
     result.wristAngle = -1;
     result.giveUp = false;
-
 }
 
 PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
     //threshold distance to be from the target block before attempting pickup
-    float targetDist = 0.14; //meters	//ORIGINALLY 0.22
+    float targetDist = 0.16; //meters	//ORIGINALLY 0.22
 
     //GRIPPER OPTIMUM SETTING:
     //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
@@ -62,9 +62,10 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
     else if (blockDist > targetDist && !lockTarget) //if a target is detected but not locked, and not too close.
     {
         float vel = blockDist * 0.20;
-        if (vel < 0.1) vel = 0.1;
-        if (vel > 0.2) vel = 0.2;
-        result.cmdVel = vel;
+        //if (vel < 0.1) vel = 0.1;
+        //if (vel > 0.2) vel = 0.2;
+	vel = 0.1;        
+	result.cmdVel = vel;
         result.angleError = -blockYawError/2;
         timeOut = false;
         nTargetsSeen = 0;
@@ -83,7 +84,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         result.angleError = 0.0;
         result.wristAngle = 0;
     }
-    else if (Td > 1.2) //close the fingers and stop driving	(1.8)
+    else if (Td > .8) //close the fingers and stop driving	(1.8)
     {
         result.cmdVel = 0.0;
         result.angleError = 0.0;
@@ -149,7 +150,6 @@ PickUpResult PickUpController::selectTarget(const apriltags_ros::AprilTagDetecti
   result.fingerAngle = -1;
   result.wristAngle = -1;
   result.giveUp = false;*/
-
 
     nTargetsSeen = 0;
     nTargetsSeen = message->detections.size();
