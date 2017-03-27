@@ -20,7 +20,8 @@ PickUpController::PickUpController()
 PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
     //threshold distance to be from the target block before attempting pickup
-    float targetDist = 0.16; //meters	//ORIGINALLY 0.22
+    float targetDist = 0.08;  //meters // SIM
+//    float targetDist = 0.16; //meters	//ORIGINALLY 0.22  ROVER
 
     //GRIPPER OPTIMUM SETTING:
     //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
