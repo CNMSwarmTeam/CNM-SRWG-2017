@@ -45,6 +45,8 @@ class SearchController
 
     void obstacleWasAvoided(){ avoidedObstacle = true; numTimesAvoidedObst++; }
 
+    void setSearchDist(int id) { cnmSearchCounterDistance = 1.25 + (id * 0.45); }
+
     //SEARCH ALOGIRTHM CALLS
     geometry_msgs::Pose2D search(geometry_msgs::Pose2D currentLocation);		// performs search pattern
     geometry_msgs::Pose2D continueInterruptedSearch(geometry_msgs::Pose2D currentLocation, geometry_msgs::Pose2D oldGoalLocation);	// continues search pattern after interruption
