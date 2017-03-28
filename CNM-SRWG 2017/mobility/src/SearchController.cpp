@@ -18,7 +18,7 @@ SearchController::SearchController()
     numTimesAvoidedObst = 0;
 
     //random distance from center to start searching
-    cnmSearchCounterDistance = MIN_DIST_SEARCH;//= rng->uniformReal(MIN_DIST_SEARCH, MAX_DIST_SEARCH);  //2;
+    cnmSearchCounterDistance = rng->uniformReal(MIN_DIST_SEARCH, MAX_DIST_SEARCH);  //2;
 
     cnmNumRotations = 0;
     minNumRotations = 4;
