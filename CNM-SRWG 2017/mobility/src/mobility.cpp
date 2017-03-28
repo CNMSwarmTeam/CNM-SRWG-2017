@@ -256,6 +256,7 @@ bool readyToDrop = false;
 bool dropNow = false;
 bool seeMoreTargets = false;
 bool waitToDrop = false;
+bool finishedDropOff = true;
 
 //Variables for reverse/180 behvaior
 bool firstReverse = true;
@@ -517,7 +518,7 @@ int main(int argc, char **argv)
     //-----PICKUP TIMERS-----
 
     //Waits a time after pickup before viewing other targets as obstacles
-    cnmAfterPickUpTimer = mNH.createTimer(cnm2SecTime, cnmFinishedPickUpTime, true);
+    cnmAfterPickUpTimer = mNH.createTimer(cnm8SecTime, cnmFinishedPickUpTime, true);
     cnmAfterPickUpTimer.stop();
 
     //-----DROPOFF TIMERS-----
@@ -801,7 +802,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         //---------------------------------------------
         if(centerSeen && !targetCollected && cTagcount > 2)
         {
-	    CNMReactToCenterProtocol();
+	    if(finishedDropOff) { CNMReactToCenterProtocol(); }
 
             //FINAL STEPS
             //---------------------------------------------
@@ -875,7 +876,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             {
                 //Check to see if we are currently trying to reverse
                 //---------------------------------------------
-                if(!cnmReverse || (cnmReverse && cnmTurn180Done))
+                if(!cnmReverse || (cnmReverse && cnmReverseDone))
                 {
                     CNMReverseReset();
 
@@ -1199,6 +1200,7 @@ bool CNMTransformCode()
 {
 
    static bool isCalculating = false;
+   static bool firstCantTransform = true;
 //MUST TEST:  using currentLocation vs using currentMapLocation
 
    // If returning with a target
@@ -1231,8 +1233,6 @@ bool CNMTransformCode()
     //else if(!targetDetected && distToGoal < 0.5 && timerTimeElapsed > returnToSearchDelay && cnmInitialPositioningComplete)
     {
 	std_msgs::String msg;
-	
-	if(cnmReverse) { CNMReverseReset(); }
 
 	static bool firstTimeCalculate = true;
 	bool goToNextPoint = CNMCurrentLocationAVG();
@@ -1291,16 +1291,19 @@ bool CNMTransformCode()
     }
     else
     {
-	std_msgs::String msg;
-	stringstream ss;
-	ss << "Time:  " << timerTimeElapsed << " can't transform";
-        msg.data = ss.str();
-        infoLogPublisher.publish(msg);	
-        
-	sendDriveCommand(0.0, 0.0); 
+	if(firstCantTransform)
+	{
+	    std_msgs::String msg;
+	    stringstream ss;
+	    ss << "Time:  " << timerTimeElapsed << " can't transform";
+            msg.data = ss.str();
+            infoLogPublisher.publish(msg);	
+	    goalLocation = currentLocation;
+	    firstCantTransform = false;        
+	}
 
-        goalLocation = currentLocation;
-        stateMachineState = STATE_MACHINE_ROTATE;
+	sendDriveCommand(0.0, 0.0); 
+	stateMachineState = STATE_MACHINE_TRANSFORM;
     }
 
     return true;
@@ -1323,7 +1326,7 @@ bool CNMRotateCode()
 
 	float turnSpeed = 0.25 * dirToRotate;
         // rotate but dont drive 0.05 is to prevent turning in reverse
-        sendDriveCommand((0.05 * dirToRotate), turnSpeed);
+        sendDriveCommand((-0.05 * dirToRotate), turnSpeed);
         return true;
     }
     else
@@ -1411,14 +1414,15 @@ bool CNMPickupCode()
 
             //assume target has been picked up by gripper
             targetCollected = true;
-	    pickedUp = true;
+
+	    pickedUp = true;			//We have something picked up
+            cnmFinishedPickUp = false;		//We are now waiting to finish our pickup
             result.pickedUp = false;
 
             // lower wrist to avoid ultrasound sensors
             std_msgs::Float32 angle;
             angle.data = 1.2;  //.8
             wristAnglePublish.publish(angle);
-            sendDriveCommand(0.0, 0.0);
         }
     }
     else if(pickedUp)
@@ -1449,10 +1453,9 @@ bool CNMPickupCode()
             goalLocation.y = cnmCenterLocation.y;
 
             //Hand off to rotate
-            stateMachineState = STATE_MACHINE_ROTATE;
+            stateMachineState = STATE_MACHINE_TRANSFORM;
 
             cnmAfterPickUpTimer.start();
-            cnmFinishedPickUp = false;
 
             pickedUp = false;
             firstTimeIn = true;
@@ -1460,7 +1463,8 @@ bool CNMPickupCode()
         }
         else
         {
-            sendDriveCommand(0.0, 0.0);
+	    if(searchController.cnmIsAlternating()) { sendDriveCommand(0.0, -0.15); }
+	    else { sendDriveCommand(0.0, 0.15); }
         }
     }
     else
@@ -1503,52 +1507,103 @@ bool CNMDropOffCode()
             //raise wrist
             wristAnglePublish.publish(angle);		    
 
-	    //RESET!
-	    //---------------
-       	    timerStartTime = time(0);
-      	    targetCollected = false;
-       	    targetDetected = false;
-       	    lockTarget = false;
-
-      	    cnmWaitToReset = true;
-       	    cnmWaitToResetWGTimer.start();
-
-            isDroppingOff = false;
-            readyToDrop = false;
-            dropNow = false;
-            firstCenterSeen = true;
-            readyGoForward = false;
-            firstInForward = true;
-	    tryAgain = false;
-	    startDropOff = false;
-	    searchingForCenter = false;
-
-            finishedProtocolPub.publish(msg);           //dropoffProtocol
-
-       	    cnmCanCollectTags = false;              //Don't try to collect tags
-      	    cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
-
-            //ADD current position to array of center tags
-
-	    //CenterXCoordinates[centerIndex] = currentLocation.x;
-    	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
-   	    //CenterYCoordinates[centerIndex] = currentLocation.y;
-    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
-
-	    CNMAVGCenter();
-
-       	    // move back to transform step
-       	    stateMachineState = STATE_MACHINE_TRANSFORM;
-
-            CNMStartReversing();
-
-	    if(IWasLost)
+	    if(numTargets > 0 || cTagcount > 0)
 	    {
-		IWasLost = false;
-		searchController.AmILost(false);
-	    }
 
-    	    return false;
+		sendDriveCommand(-0.2, 0.0);
+
+		//check to see if we need to reset center arrays
+	    	if(IWasLost)
+	    	{
+		    IWasLost = false;
+		    searchController.AmILost(false);
+
+		    maxedCenterArray = false;
+	            centerIndex = 0;    			
+
+		    //add current position to center array
+
+		    //CenterXCoordinates[centerIndex] = currentLocation.x;
+	    	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
+    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
+
+	    	    CNMAVGCenter();
+		}
+		else
+		{
+		    //add current position to center array
+
+		    //CenterXCoordinates[centerIndex] = currentLocation.x;
+    		    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
+    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
+
+		    CNMAVGCenter();
+		}
+	    }
+	    else
+	    {
+
+	        //RESET!
+	        //---------------
+       	        timerStartTime = time(0);
+      	        targetCollected = false;
+       	        targetDetected = false;
+       	        lockTarget = false;
+
+      	        cnmWaitToReset = true;
+       	        cnmWaitToResetWGTimer.start();
+
+                isDroppingOff = false;
+                readyToDrop = false;
+                dropNow = false;
+                firstCenterSeen = true;
+                readyGoForward = false;
+                firstInForward = true;
+	        tryAgain = false;
+	        startDropOff = false;
+	        searchingForCenter = false;
+
+                finishedProtocolPub.publish(msg);           //dropoffProtocol
+
+		cnmCanCollectTags = false;              //Don't try to collect tags
+		cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
+
+		CNMReverseReset();
+            	CNMStartReversing();
+
+	    	if(IWasLost)
+	    	{
+		    IWasLost = false;
+		    searchController.AmILost(false);
+
+		    maxedCenterArray = false;
+	            centerIndex = 0;    			
+
+		    //add current position to center array
+
+		    //CenterXCoordinates[centerIndex] = currentLocation.x;
+	    	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
+    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
+
+	    	    CNMAVGCenter();
+		}
+		else
+		{
+		    //add current position to center array
+
+		    //CenterXCoordinates[centerIndex] = currentLocation.x;
+    		    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
+    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
+
+		    CNMAVGCenter();
+		}
+
+    	   	return false;
+	    }
 	}
 
 	//If we THINK we are in a position to drop off a tag
@@ -1562,13 +1617,15 @@ bool CNMDropOffCode()
 	    //We drove forward onto the center parallel to the tags... reverse
 	    if(cTagcount > 8)
 	    {				
-            	msg.data = "Tags greater than 8";
+            	msg.data = "Tags greater than 8; Dropping anyway";
             	infoLogPublisher.publish(msg);
 
-		sendDriveCommand(-0.15, 0.0);
+		dropNow = true;
 
-		tryAgain = true;
-		readyToDrop = false;
+		sendDriveCommand(-0.2, 0.0);
+
+		//tryAgain = true;
+		//readyToDrop = false;
 	    }
 	    else if(cTagcount > 3 && cTagcount <= 8)
 	    {
@@ -1604,6 +1661,8 @@ bool CNMDropOffCode()
             	msg.data = "Tags less than 3; Dropping off!";
             	infoLogPublisher.publish(msg);
 		
+		sendDriveCommand(-0.2, 0.0);
+
             	dropNow = true;
 	    }
 	}
@@ -1648,6 +1707,7 @@ bool CNMDropOffCode()
 
             	isDroppingOff = true;
             	firstCenterSeen = false;
+		finishedDropOff = false;
 
                 dropProtocolPub.publish(msg); 	//triggers waitToDrop	//dropOffProtocol
 	    }
@@ -1673,7 +1733,6 @@ bool CNMDropOffCode()
 	    searchController.AmILost(true);
 	    searchController.setCenterLocation(currentLocation);
 	    IWasLost = true;
-	    resetMap = true;
 
 	    //Start Looking!
 	    searchingForCenter = true;
@@ -1705,7 +1764,7 @@ bool CNMDropoffCalc()
     float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
     //float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
-    float visDistToCenter = 1.5;
+    float visDistToCenter = 0.8;
 
     if(distToCenter > visDistToCenter) { return false; }
     else { return true; }
@@ -2364,7 +2423,6 @@ void CNMAvoidObstacle(const ros::TimerEvent &event)
     std_msgs::String msg;
     msg.data = "Obstacle Avoidance Initiated";
     infoLogPublisher.publish(msg);
-
     cnmAvoidObstacle = true;
 
     cnmAvoidObstacleTimer.stop();
@@ -2469,6 +2527,9 @@ void CNMTurn180(const ros::TimerEvent& event)
     msg.data = ss.str();
     infoLogPublisher.publish(msg);
 
+    // move back to transform step
+    stateMachineState = STATE_MACHINE_TRANSFORM;
+
     cnmTurn180Timer.stop();
 }
 
@@ -2492,6 +2553,11 @@ void cnmWaitToResetWG(const ros::TimerEvent &e)
 
 void cnmFinishedPickUpTime(const ros::TimerEvent& e)
 {
+
+    std_msgs::String msg;
+    msg.data = "REVERSE TIMER DONE, STARTING TURN180";
+    infoLogPublisher.publish(msg);
+
     cnmFinishedPickUp = true;
     numTagsCarrying = numTargets + 1;
     //isDroppingOff = true;
@@ -2507,6 +2573,12 @@ void CNMWaitBeforeDetectObst(const ros::TimerEvent &event)
 void CNMWaitToCollectTags(const ros::TimerEvent &event)
 {
     cnmCanCollectTags = true;
+
+    if(!finishedDropOff)
+    {
+	finishedDropOff = true;
+    }
+
     cnmWaitToCollectTagsTimer.stop();
 }
 
