@@ -11,7 +11,9 @@
 // ROS messages
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int16.h>
+#include <std_msgs/Int32.h>
 #include <std_msgs/UInt8.h>
+#include <std_msgs/MultiArrayLayout.h>
 #include <std_msgs/String.h>
 #include <sensor_msgs/Joy.h>
 #include <sensor_msgs/Range.h>
@@ -166,6 +168,12 @@ void targetDetectedReset(const ros::TimerEvent& event);
 //CNM Code Follows:
 //--------------------------------------------
 
+//COMMS
+int roverIDArr[6];
+int numRovers = 0;
+int myID = 0;
+string RoverStatus;
+
 //CONSTANTS
 
 double CENTEROFFSET = .90;                                  //offset for seeing center
@@ -272,13 +280,19 @@ bool cnmRotate = false;
 
 //CNM Publishers
 //---------------------------------------------
-ros::Publisher dropProtocolPub; //dropOffProtocol
+ros::Publisher dropProtocolPub; 		//dropOffProtocol
 ros::Publisher finishedProtocolPub;
+
+ros::Publisher roverIDPub;
+ros::Publisher roverStatusPub;
 
 //CNM Subscribers
 //---------------------------------------------
 ros::Subscriber dropProtocolSub;		//dropOffProtocol
 ros::Subscriber finishedProtocolSub;
+
+ros::Subscriber roverIDSub;
+ros::Subscriber roverStatusSub;
 
 //Times For Timers (IN SECONDS)
 //---------------------------------------------
@@ -388,8 +402,18 @@ void CNMCheckIfPickingUp();
 
 //Pub/Sub Callback Handlers
 //-----------------------------------
+
+//INIT
+void roverIDHandler(const std_msgs::UInt8& id);
+
+//ROVER STATUS
+//void roverStatusHandler(const std_msgs::StringMultiArray::constPtr& array);
+
+
+//DROPOFF
 void dropProtocolHandler(const std_msgs::String& msg);			//dropOffProtocol
 void finishedProtocolHandler(const std_msgs::String& msg);
+
 
 //Timer Functions/Callbacks Handlers
 //-----------------------------------
@@ -475,11 +499,26 @@ int main(int argc, char **argv)
 
     //CNM Publishers
     //----------------------------------------------------
+
+
+    //INIT
+    roverIDPub = mNH.advertise<std_msgs::UInt8>("numRovers", 10, &roverIDHandler);    
+    //roverStatusPub = mNH.advertise<std_msgs::UInt8, std_msgs::String>("myID", "myStatus", 10, &roverStatusHandler);
+
+    //DROPOFF
     dropProtocolPub = mNH.advertise<std_msgs::String>("dropBool", 1000);                    //dropOffProtocol
     finishedProtocolPub = mNH.advertise<std_msgs::String>("dropFinished", 1000);
 
+    
+
     //CNM Subscribers
     //----------------------------------------------------
+
+    //INIT
+    roverIDSub = mNH.subscribe("numRovers", 10, &roverIDHandler);
+    //roverStatusSub = mNH.subscribe("myID", "myStatus", 10, &roverIDHandler);
+
+    //DROPOFF
     dropProtocolSub = mNH.subscribe("dropBool", 1000, &dropProtocolHandler);                //dropOffProtocol
     finishedProtocolSub = mNH.subscribe("dropFinished", 1000, &finishedProtocolHandler);
 
@@ -1802,9 +1841,20 @@ void CNMFirstBoot()
     //FIRST TIME IN THIS FUNCTION
     if(firstTimeInBoot)
     {
+	myID = numRovers;
+
+	std_msgs::UInt8 id;
+	id.data = numRovers + 1;
+
+	roverIDPub.publish(id);
+
         //Print a message to the info box letting us know the robot recognizes the state change
         std_msgs::String msg;
-        msg.data = "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
+	stringstream ss;
+
+	ss << "Switched to AUTONOMOUS; Waiting For Find Center Protocol;  I am #" << myID;
+
+        msg.data = ss.str();
         infoLogPublisher.publish(msg);
 
         goalLocation = currentLocation;
@@ -2073,6 +2123,9 @@ void CNMFirstSeenCenter()
     msg.data = "Found Initial Nest Location";
     infoLogPublisher.publish(msg);
 
+    //send search controller myId
+    searchController.setSearchDist(myID);
+
     //change bool
     cnmLocatedCenterFirst = true;
     searchController.AmILost(false);
@@ -2294,6 +2347,22 @@ void CNMReactToCenterProtocol()
 
 //CNM PUB/SUB HANDLERS
 //-----------------------------------
+
+
+void roverIDHandler(const std_msgs::UInt8& id)
+{
+
+   numRovers = id.data;
+
+   //std_msgs::String msg;
+
+   //stringstream ss;
+   //ss << "publishID Success; roverNum = " << numRovers;
+   //msg.data = ss.str();
+   //infoLogPublisher.publish(msg);
+
+}
+
 
 void dropProtocolHandler(const std_msgs::String& msg)		//dropOffProtocol
 {
