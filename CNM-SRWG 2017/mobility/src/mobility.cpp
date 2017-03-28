@@ -256,7 +256,8 @@ bool readyToDrop = false;
 bool dropNow = false;
 bool seeMoreTargets = false;
 bool waitToDrop = false;
-bool finishedDropOff = true;
+bool backUp = false;
+bool dropOffReset = false;
 
 //Variables for reverse/180 behvaior
 bool firstReverse = true;
@@ -328,7 +329,7 @@ ros::Timer cnmWaitToResetWGTimer;
 //DropOff Timers
 //---------------------------------------------
 ros::Timer cnmDropOffDriveTimer;
-ros::Timer cnmDropOffTimeOut;
+ros::Timer cnmDropOffReverse;
 
 //180 Timers(TIED TO REVERSE)
 //---------------------------------------------
@@ -407,7 +408,7 @@ void cnmFinishedPickUpTime(const ros::TimerEvent& e);           //Wait before de
 void cnmWaitToResetWG(const ros::TimerEvent& e);                //After Dropping off, wait before resetting grippers
 
 void CNMDropOffDrive(const ros::TimerEvent& e);     			//Timer to drive forward before drop off attempt in center
-void CNMDropTimedOut(const ros::TimerEvent& e);
+void CNMDropReversed(const ros::TimerEvent& e);
 
 //REVERSE TIMER
 void CNMReverseTimer(const ros::TimerEvent& event);             //REVERSES
@@ -509,16 +510,10 @@ int main(int argc, char **argv)
     cnmTurn180Timer = mNH.createTimer(cnm8SecTime, CNMTurn180, true);
     cnmTurn180Timer.stop();
 
-    //-----DROPOFF TIMERS-----
-
-    //Waits to reset Wrist/Gripper to a lowered driving state (Prevents trapping blocks under gripper)
-    cnmWaitToResetWGTimer = mNH.createTimer(cnm2SecTime, cnmWaitToResetWG, true);
-    cnmWaitToResetWGTimer.stop();
-
     //-----PICKUP TIMERS-----
 
     //Waits a time after pickup before viewing other targets as obstacles
-    cnmAfterPickUpTimer = mNH.createTimer(cnm8SecTime, cnmFinishedPickUpTime, true);
+    cnmAfterPickUpTimer = mNH.createTimer(cnm4SecTime, cnmFinishedPickUpTime, true);
     cnmAfterPickUpTimer.stop();
 
     //-----DROPOFF TIMERS-----
@@ -527,8 +522,12 @@ int main(int argc, char **argv)
     cnmDropOffDriveTimer = mNH.createTimer(cnm4SecTime, CNMDropOffDrive, true);    //SIM
     cnmDropOffDriveTimer.stop();
 
-    cnmDropOffTimeOut = mNH.createTimer(cnm4SecTime, CNMDropTimedOut, true);
-    cnmDropOffTimeOut.stop();
+    cnmDropOffReverse = mNH.createTimer(cnm4SecTime, CNMDropReversed, true);
+    cnmDropOffReverse.stop();
+
+    //Waits to reset Wrist/Gripper to a lowered driving state (Prevents trapping blocks under gripper)
+    cnmWaitToResetWGTimer = mNH.createTimer(cnm2SecTime, cnmWaitToResetWG, true);
+    cnmWaitToResetWGTimer.stop();
 
     //AVOIDING TARGETS IF CARRYING ONE
     cnmAvoidOtherTargetTimer = mNH.createTimer(cnm4SecTime, CNMAvoidOtherTargets, true);
@@ -632,7 +631,6 @@ void mobilityStateMachine(const ros::TimerEvent&)
             //---------------------------------------------
             if(!cnmWaitToReset)
             {
-
 		//GRIPPER OPTIMUM SETTING:
 		//FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
 		//WRIST:    0 - 1.6    (Any further and will scrape ground if rover hits bumps)
@@ -802,7 +800,7 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
         //---------------------------------------------
         if(centerSeen && !targetCollected && cTagcount > 2)
         {
-	    if(finishedDropOff) { CNMReactToCenterProtocol(); }
+	    CNMReactToCenterProtocol();
 
             //FINAL STEPS
             //---------------------------------------------
@@ -950,11 +948,19 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
 
 	    if(!cnmCanCollectTags)
 	    {
-            cnmWaitToCollectTagsTimer.stop();
+                cnmWaitToCollectTagsTimer.stop();
 	    }
 	    else
 	    {
-            cnmCanCollectTags = false;                      //Don't try picking anything up
+                cnmCanCollectTags = false;                      //Don't try picking anything up
+	    }
+
+	    if(targetDetected)
+	    {
+		targetDetected = false;
+
+                //reset pickup
+                pickUpController.reset();
 	    }
 
             cnmAvoidObstacleTimer.start();
@@ -995,30 +1001,30 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
 	     cnmWaitToCollectTagsTimer.start();		//Start timer to start looking for targets again
 	}
 
-    if(cnmAvoidObstacle)
-    {
-        if(!firstTimeRotate)
-        {
-            //std_msgs::String msg;
-            //msg.data = "DRIVING 30 degrees to the left!";
-            //infoLogPublisher.publish(msg);
+    	if(cnmAvoidObstacle)
+    	{
+       	    if(!firstTimeRotate)
+            {
+                //std_msgs::String msg;
+                //msg.data = "DRIVING 30 degrees to the left!";
+                //infoLogPublisher.publish(msg);
 
-            firstTimeRotate = true;
-        }
+                firstTimeRotate = true;
+            }
 
-        goalLocation.theta = currentLocation.theta + (M_PI/6);
+            goalLocation.theta = currentLocation.theta + (M_PI/6);
 
-        goalLocation.x = currentLocation.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
+            goalLocation.x = currentLocation.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
 	    goalLocation.y = currentLocation.y + (AVOIDOBSTDIST * (sin(goalLocation.theta)));
 
-	    stateMachineState = STATE_MACHINE_ROTATE;
+	    //stateMachineState = STATE_MACHINE_ROTATE;
 
 	    cnmAvoidObstacle = false;
-    }
-	else
-	{
-        cnmAvoidObstacleTimer.stop();                   //Double tap stopping the timer in case obstacle moves
-	}
+        }
+        else
+        {
+            cnmAvoidObstacleTimer.stop();                   //Double tap stopping the timer in case obstacle moves
+        }
         
         firstTimeSeeObst = true;
     }
@@ -1239,7 +1245,7 @@ bool CNMTransformCode()
 
     	float distToGoal = hypot(goalLocation.x - currentLocation.x, goalLocation.y - currentLocation.y);    
 
-	if(!centerSeen && goToNextPoint)
+	if(!centerSeen && goToNextPoint && !isDroppingOff)
 	{
             firstTimeCalculate = true;
 	    isCalculating = false;
@@ -1281,6 +1287,13 @@ bool CNMTransformCode()
 	    sendDriveCommand(0.0, 0.0);
 	}
 
+	else if(isDroppingOff)
+	{
+	    msg.data = "Haven't finished drop off, reversing";
+	    infoLogPublisher.publish(msg);
+	    sendDriveCommand(-0.2, 0.0);
+	}	
+	
 	else 
 	{ 
 	    msg.data = "Did I make it here?";
@@ -1483,12 +1496,51 @@ bool CNMDropOffCode()
 	static bool tryAgain = false;
 	static bool IWasLost = false;
 	static bool startDropOff = false;
-	static bool searchingForCenter = false;
+	static bool searchingForCenter = false; 
 
 	bool atCenter = CNMDropoffCalc();
 
+	if(dropOffReset)
+	{
+	    //RESET!
+	    //---------------
+       	    timerStartTime = time(0);
+      	    targetCollected = false;
+       	    targetDetected = false;
+       	    lockTarget = false;
+
+      	    cnmWaitToReset = true;
+       	    cnmWaitToResetWGTimer.start();
+
+            readyToDrop = false;
+            dropNow = false;
+            firstCenterSeen = true;
+            readyGoForward = false;
+            firstInForward = true;
+	    tryAgain = false;
+	    startDropOff = false;
+	    searchingForCenter = false;
+	    backUp = false;
+	    dropOffReset = false;
+
+            finishedProtocolPub.publish(msg);           //dropoffProtocol
+
+	    cnmWaitToCollectTagsTimer.start();      	//Start Timer to trigger back to true
+
+	    CNMReverseReset();
+            CNMStartReversing();		
+
+    	    return false;
+	}
+
+	else if(backUp)
+	{
+	    sendDriveCommand(-0.2, 0.0);
+	    cnmDropOffReverse.start();
+	}
+
 	//if we are officially dropping target off
-	if(dropNow)
+	else if(dropNow)
 	{
 	    //DROP
 	    //---------------
@@ -1505,105 +1557,34 @@ bool CNMDropOffCode()
             angle.data = 0;
 
             //raise wrist
-            wristAnglePublish.publish(angle);		    
+            wristAnglePublish.publish(angle);
 
-	    if(numTargets > 0 || cTagcount > 0)
+	    if(IWasLost)
 	    {
+		IWasLost = false;
+		searchController.AmILost(false);
 
-		sendDriveCommand(-0.2, 0.0);
+		maxedCenterArray = false;
+	        centerIndex = 0;    			
 
-		//check to see if we need to reset center arrays
-	    	if(IWasLost)
-	    	{
-		    IWasLost = false;
-		    searchController.AmILost(false);
-
-		    maxedCenterArray = false;
-	            centerIndex = 0;    			
-
-		    //add current position to center array
-
-		    //CenterXCoordinates[centerIndex] = currentLocation.x;
-	    	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
-   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
-    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
-
-	    	    CNMAVGCenter();
-		}
-		else
-		{
-		    //add current position to center array
-
-		    //CenterXCoordinates[centerIndex] = currentLocation.x;
-    		    CenterXCoordinates[centerIndex] = currentLocationMap.x;
-   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
-    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
-
-		    CNMAVGCenter();
-		}
+		//add current position to center array
 	    }
-	    else
-	    {
 
-	        //RESET!
-	        //---------------
-       	        timerStartTime = time(0);
-      	        targetCollected = false;
-       	        targetDetected = false;
-       	        lockTarget = false;
+	    //store one GPS x and y
+	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
 
-      	        cnmWaitToReset = true;
-       	        cnmWaitToResetWGTimer.start();
+	    CNMAVGCenter();
 
-                isDroppingOff = false;
-                readyToDrop = false;
-                dropNow = false;
-                firstCenterSeen = true;
-                readyGoForward = false;
-                firstInForward = true;
-	        tryAgain = false;
-	        startDropOff = false;
-	        searchingForCenter = false;
+	    //store one ODOM x and y
+	    CenterYCoordinates[centerIndex] = currentLocation.y;
+	    CenterXCoordinates[centerIndex] = currentLocation.x;
 
-                finishedProtocolPub.publish(msg);           //dropoffProtocol
+	    CNMAVGCenter();
 
-		cnmCanCollectTags = false;              //Don't try to collect tags
-		cnmWaitToCollectTagsTimer.start();      //Start Timer to trigger back to true
+	    backUp = true;		    	    
+	    cnmCanCollectTags = false;              	//Don't try to collect tags
 
-		CNMReverseReset();
-            	CNMStartReversing();
-
-	    	if(IWasLost)
-	    	{
-		    IWasLost = false;
-		    searchController.AmILost(false);
-
-		    maxedCenterArray = false;
-	            centerIndex = 0;    			
-
-		    //add current position to center array
-
-		    //CenterXCoordinates[centerIndex] = currentLocation.x;
-	    	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
-   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
-    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
-
-	    	    CNMAVGCenter();
-		}
-		else
-		{
-		    //add current position to center array
-
-		    //CenterXCoordinates[centerIndex] = currentLocation.x;
-    		    CenterXCoordinates[centerIndex] = currentLocationMap.x;
-   	    	    //CenterYCoordinates[centerIndex] = currentLocation.y;
-    	    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
-
-		    CNMAVGCenter();
-		}
-
-    	   	return false;
-	    }
 	}
 
 	//If we THINK we are in a position to drop off a tag
@@ -1707,7 +1688,6 @@ bool CNMDropOffCode()
 
             	isDroppingOff = true;
             	firstCenterSeen = false;
-		finishedDropOff = false;
 
                 dropProtocolPub.publish(msg); 	//triggers waitToDrop	//dropOffProtocol
 	    }
@@ -1741,9 +1721,26 @@ bool CNMDropOffCode()
 	}
 	else
  	{
+	    static bool change = false;
+
+	    std_msgs::String msg;
 
             //TEST:  MAP VS ODOM
-            goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
+	    if(change)
+	    {
+
+            	msg.data = "Can't Find Center, using GPS";
+            	goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
+		change = false;
+	    }
+	    else
+	    {
+		msg.data = "Can't Find Center, using Odom";
+		goalLocation.theta = atan2(cnmCenterLocation.y - currentLocation.y, cnmCenterLocation.x - currentLocation.x);
+		change = true;
+	    }
+
+	    infoLogPublisher.publish(msg);
 
             // set center as goal position
             goalLocation.x = cnmCenterLocation.x;
@@ -1960,7 +1957,7 @@ void CNMTargetAvoid()
     goalLocation.x = currentLocation.x + (AVOIDTARGDIST * cos(goalLocation.theta));
     goalLocation.y = currentLocation.y + (AVOIDTARGDIST * sin(goalLocation.theta));
 
-    stateMachineState = STATE_MACHINE_ROTATE;
+//    stateMachineState = STATE_MACHINE_ROTATE;
 
     searchController.obstacleWasAvoided();
 }
@@ -2194,6 +2191,7 @@ bool CNMCurrentLocationAVG()
 
     if(index < ASIZE)
     {
+
 	avgCurrentCoordsX[index] = currentLocationMap.x;
     	avgCurrentCoordsY[index] = currentLocationMap.y;
 
@@ -2264,12 +2262,15 @@ void CNMReactToCenterProtocol()
         }
     }
 
-    if(!targetCollected && gotEnoughPoints && !cnmReverse)
+    if(!targetCollected && gotEnoughPoints && !isDroppingOff)
     {
+	//if we are not centered
         if(!centered)
 	{
+	    //keep trying
 	    centered = CNMCentered();
 	}
+	//if we are finally centered
 	else
 	{
             //If we haven't seen the center before
@@ -2280,9 +2281,11 @@ void CNMReactToCenterProtocol()
             //---------------------------------------------
             else if(cnmLocatedCenterFirst && cnmInitialPositioningComplete) { CNMRefindCenter(); }
 
+	    //reset our variables
             countLocStored = 0;
             gotEnoughPoints = false;
-                    
+            
+	    //reverse       
             CNMReverseReset();
             CNMStartReversing();
 	}
@@ -2298,21 +2301,21 @@ void dropProtocolHandler(const std_msgs::String& msg)		//dropOffProtocol
 
     if(waitToDrop == true && isDroppingOff == true && targetCollected == true)	//allow to continue	//dropOffProtocol
     {
-    std_msgs::String msg;
+    	std_msgs::String msg;
         msg.data = "allowed to proceed";
         infoLogPublisher.publish(msg);
     }
 
     if(waitToDrop == true && isDroppingOff == false && targetCollected == true)  // stop movement here, resume when waitToDrop = false
     {
-    std_msgs::String msg;
+    	std_msgs::String msg;
         msg.data = "I should be waiting";
         infoLogPublisher.publish(msg);
     }
 
     if(waitToDrop == true && targetCollected == false) // allow to continue, but notified swarmie at center
     {
-    std_msgs::String msg;
+    	std_msgs::String msg;
         msg.data = "I don't care.";
         infoLogPublisher.publish(msg);
     }
@@ -2419,14 +2422,12 @@ void CNMInitialWait(const ros::TimerEvent &e)
 
 void CNMAvoidObstacle(const ros::TimerEvent &event)
 {
-
     std_msgs::String msg;
     msg.data = "Obstacle Avoidance Initiated";
     infoLogPublisher.publish(msg);
     cnmAvoidObstacle = true;
 
     cnmAvoidObstacleTimer.stop();
-
 }
 
 //TARGET AVOIDANCE
@@ -2555,7 +2556,7 @@ void cnmFinishedPickUpTime(const ros::TimerEvent& e)
 {
 
     std_msgs::String msg;
-    msg.data = "REVERSE TIMER DONE, STARTING TURN180";
+    msg.data = "Finished Pick Up";
     infoLogPublisher.publish(msg);
 
     cnmFinishedPickUp = true;
@@ -2574,9 +2575,9 @@ void CNMWaitToCollectTags(const ros::TimerEvent &event)
 {
     cnmCanCollectTags = true;
 
-    if(!finishedDropOff)
+    if(isDroppingOff)
     {
-	finishedDropOff = true;
+	isDroppingOff = false;
     }
 
     cnmWaitToCollectTagsTimer.stop();
@@ -2598,10 +2599,10 @@ void CNMDropOffDrive(const ros::TimerEvent &event)
     }
 }
 
-void CNMDropTimedOut(const ros::TimerEvent &event)
+void CNMDropReversed(const ros::TimerEvent &event)
 {
-    goalLocation = cnmCenterLocation;
-    cnmDropOffTimeOut.stop();
+    dropOffReset = true;
+    cnmDropOffReverse.stop();
 }
 
 void CNMWaitToConfirm(const ros::TimerEvent& event)
