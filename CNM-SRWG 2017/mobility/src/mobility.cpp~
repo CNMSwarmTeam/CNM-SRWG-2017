@@ -1565,7 +1565,7 @@ bool CNMDropOffCode()
 	static bool firstInForward = true;
 	static bool tryAgain = false;
 	static bool IWasLost = false;
-	static bool startDropOff = false;
+	static bool startDropOff = afalse;
 	static bool searchingForCenter = false; 
 
 	bool atCenter = CNMDropoffCalc();

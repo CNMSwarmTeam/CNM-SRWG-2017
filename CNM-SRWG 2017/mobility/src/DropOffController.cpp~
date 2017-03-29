@@ -295,5 +295,5 @@ void DropOffController::setDataTargets(int ccount, double lleft, double rright)
     countRight = rright;
 }
 */
-DropOffController::~DropOffController() { }
+DropOffController::~DropOffController() {}
 

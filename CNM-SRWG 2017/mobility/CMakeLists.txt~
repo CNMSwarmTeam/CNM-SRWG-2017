@@ -33,5 +33,3 @@ target_link_libraries(
   ${catkin_LIBRARIES}
 )
 
-set(CMAKE_BUILD_TYPE Debug)
-
