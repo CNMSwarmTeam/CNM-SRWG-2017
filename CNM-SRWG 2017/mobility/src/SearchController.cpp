@@ -546,6 +546,19 @@ void SearchController::AmILost(bool answer)
     }
 }
 
+void SearchController::setSearchDist(int id)
+{ 
+    
+   if(id < 3)
+   {
+       cnmSearchCounterDistance = 1.25 + id;
+   }
+   else
+   {
+       cnmSearchCounterDistance = 3.25 + (.35 * (id - 2));
+   } 
+}
+
 
 //OLD RANDOM WALK
 //remainingGoalDist avoids magic numbers by calculating the dist
