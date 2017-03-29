@@ -140,7 +140,7 @@ ros::Timer targetDetectedTimer;
 
 time_t timerStartTime;                          // records time for delays in sequanced actions, 1 second resolution.
 
-unsigned int startDelayInSeconds = 1;           // An initial delay to allow the rover to gather enough position data to
+unsigned int startDelayInSeconds = 1; // An initial delay to allow the rover to gather enough position data to
                                                 // average its location.
 float timerTimeElapsed = 0;
 
@@ -309,6 +309,8 @@ ros::Duration cnm10SecTime(10);
 //First Boot Timers
 //---------------------------------------------
 
+ros::Timer cnmSetUpID;
+
 //Waits 10 seconds and Drives Forward
 ros::Timer cnmInitialPositioningTimer;
 
@@ -419,6 +421,9 @@ void finishedProtocolHandler(const std_msgs::String& msg);
 //-----------------------------------
 
 //INITIAL NEST SEARCH
+
+void CNMSetUpID(const ros::TimerEvent& event);
+
 void CNMInitPositioning(const ros::TimerEvent& event);          //Wait Before Driving Forward
 void CNMForwardInitTimerDone(const ros::TimerEvent& event);     //Wait Before 180
 void CNMInitialWait(const ros::TimerEvent& e);                  //Wait Before Continued Search
@@ -524,6 +529,9 @@ int main(int argc, char **argv)
 
     //CNM TIMERS
     //----------------------------------------------------
+
+    cnmSetUpID = mNH.createTimer(ros::Duration(rng->uniformReal(1, 10)), CNMSetUpID, true);
+    cnmSetUpID.stop();
 
     //-----INITIAL CENTER FIND TIMERS-----
 
@@ -1004,7 +1012,24 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
 
             cnmAvoidObstacleTimer.start();
 
-            if(!cnmAvoidObstacle)
+	    if(message->data == 3)
+	    {
+
+                if(firstTimeSeeObst)
+                {
+                    std_msgs::String msg;
+                    msg.data = "I see an obstacle;";
+                    infoLogPublisher.publish(msg);
+                    firstTimeSeeObst = false;
+                }
+
+            	std_msgs::String msg;
+            	msg.data = "Obstacle TOO close backing up";
+            	infoLogPublisher.publish(msg);
+
+	    	sendDriveCommand(-0.2, 0.0);
+	    }
+            else if(!cnmAvoidObstacle)
             {
                 if(firstTimeSeeObst)
                 {
@@ -1236,6 +1261,12 @@ void InitComp()
     centerLocation.y = 0;
     centerLocationOdom.x = 0;
     centerLocationOdom.y = 0;
+
+    //std_msgs::UInt8 id;
+    //id.data = numRovers + 1;
+
+    //roverIDPub.publish(id);
+
 }
 
 //MOBILITY TRANSFORM STATES
@@ -1841,18 +1872,11 @@ void CNMFirstBoot()
     //FIRST TIME IN THIS FUNCTION
     if(firstTimeInBoot)
     {
-	myID = numRovers;
-
-	std_msgs::UInt8 id;
-	id.data = numRovers + 1;
-
-	roverIDPub.publish(id);
-
         //Print a message to the info box letting us know the robot recognizes the state change
         std_msgs::String msg;
 	stringstream ss;
 
-	ss << "Switched to AUTONOMOUS; Waiting For Find Center Protocol;  I am #" << myID;
+	ss << "Switched to AUTONOMOUS; Waiting For Find Center Protocol";
 
         msg.data = ss.str();
         infoLogPublisher.publish(msg);
@@ -1861,6 +1885,9 @@ void CNMFirstBoot()
         sendDriveCommand(0.0, 0.0);
 
         firstTimeInBoot = false;
+
+	//START ID PUBLISH TIMER
+	cnmSetUpID.start();
 
         //START TIMER to move forward
         cnmInitialPositioningTimer.start();
@@ -2122,9 +2149,6 @@ void CNMFirstSeenCenter()
     std_msgs::String msg;
     msg.data = "Found Initial Nest Location";
     infoLogPublisher.publish(msg);
-
-    //send search controller myId
-    searchController.setSearchDist(myID);
 
     //change bool
     cnmLocatedCenterFirst = true;
@@ -2678,4 +2702,25 @@ void CNMWaitToConfirm(const ros::TimerEvent& event)
 {
     confirmedCenter = true;   
     cnmConfirmCentered.stop();
+}
+
+void CNMSetUpID(const ros::TimerEvent& event)
+{
+    myID = numRovers;
+
+    std_msgs::String msg;
+    stringstream ss;
+
+    ss << "My ID:  " << myID;
+
+    msg.data = ss.str();
+    infoLogPublisher.publish(msg);
+
+    std_msgs::UInt8 id;
+    id.data = numRovers + 1;
+
+    roverIDPub.publish(id);
+
+    //send search controller myId
+    searchController.setSearchDist(myID);
 }
