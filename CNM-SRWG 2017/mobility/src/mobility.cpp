@@ -505,7 +505,6 @@ int main(int argc, char **argv)
     //CNM Publishers
     //----------------------------------------------------
 
-
     //INIT
     roverIDPub = mNH.advertise<std_msgs::UInt8>("numRovers", 10, &roverIDHandler);    
     //roverStatusPub = mNH.advertise<std_msgs::UInt8, std_msgs::String>("myID", "myStatus", 10, &roverStatusHandler);
@@ -530,7 +529,7 @@ int main(int argc, char **argv)
     //CNM TIMERS
     //----------------------------------------------------
 
-    cnmSetUpID = mNH.createTimer(ros::Duration(rng->uniformReal(1, 10)), CNMSetUpID, true);
+    cnmSetUpID = mNH.createTimer(ros::Duration(rng->uniformReal(1, 5)), CNMSetUpID, true);
     cnmSetUpID.stop();
 
     //-----INITIAL CENTER FIND TIMERS-----
@@ -560,7 +559,7 @@ int main(int argc, char **argv)
     //-----PICKUP TIMERS-----
 
     //Waits a time after pickup before viewing other targets as obstacles
-    cnmAfterPickUpTimer = mNH.createTimer(cnm4SecTime, cnmFinishedPickUpTime, true);
+    cnmAfterPickUpTimer = mNH.createTimer(cnm3SecTime, cnmFinishedPickUpTime, true);
     cnmAfterPickUpTimer.stop();
 
     //-----DROPOFF TIMERS-----
@@ -1567,6 +1566,7 @@ bool CNMDropOffCode()
 	static bool IWasLost = false;
 	static bool startDropOff = false;
 	static bool searchingForCenter = false; 
+	static bool firstInWait = true;
 
 	bool atCenter = CNMDropoffCalc();
 
@@ -1724,7 +1724,26 @@ bool CNMDropOffCode()
 	    if(cTagcount > 5) { sendDriveCommand(-0.15, 0.0); }
 	    else { readyGoForward = false; tryAgain = false; startDropOff = false;}
 	}
+	//if another rover is dropping off
+	else if(waitToDrop)
+	{
+	    //calcs current distance to center
+    	    float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
 
+	    //If we are less than 1.5 from our perceived center 
+	    if(distToCenter < 1.5)
+	    {
+		if(firstInWait)
+		{
+	    	    std_msgs::String msg;
+            	    msg.data = "Waiting for other rover before dropping off";
+            	    infoLogPublisher.publish(msg);
+		}
+
+		//Stop and wait
+	    	sendDriveCommand(0.0, 0.0);
+	    }	    
+	}
     	//Once somewhat straightened out, go forward
 	else if(readyGoForward)
 	{
@@ -1825,7 +1844,6 @@ bool CNMDropOffCode()
 
 bool CNMDropoffCalc()
 {
-
     // calculate the euclidean distance between
     // centerLocation and currentLocation
     float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
@@ -2390,27 +2408,30 @@ void roverIDHandler(const std_msgs::UInt8& id)
 
 void dropProtocolHandler(const std_msgs::String& msg)		//dropOffProtocol
 {
-    waitToDrop = true;
 
-    if(waitToDrop == true && isDroppingOff == true && targetCollected == true)	//allow to continue	//dropOffProtocol
+    if(isDroppingOff == true && targetCollected == true && waitToDrop == false)	//allow to continue	//dropOffProtocol
     {
     	std_msgs::String msg;
         msg.data = "allowed to proceed";
         infoLogPublisher.publish(msg);
     }
 
-    if(waitToDrop == true && isDroppingOff == false && targetCollected == true)  // stop movement here, resume when waitToDrop = false
+    if(isDroppingOff == false && targetCollected == true)  // stop movement here, resume when waitToDrop = false
     {
     	std_msgs::String msg;
-        msg.data = "I should be waiting";
+        msg.data = "I need to wait before dropping off";
         infoLogPublisher.publish(msg);
+
+    	waitToDrop = true;
     }
 
-    if(waitToDrop == true && targetCollected == false) // allow to continue, but notified swarmie at center
+    if(targetCollected == false) // allow to continue, but notified swarmie at center
     {
     	std_msgs::String msg;
         msg.data = "I don't care.";
         infoLogPublisher.publish(msg);
+
+	waitToDrop = true;
     }
 }
 
@@ -2419,8 +2440,8 @@ void finishedProtocolHandler(const std_msgs::String& msg) //give instruction if 
     waitToDrop = false;
 
     std_msgs::String msgd;
-        msgd.data = "waitToDrop turned to false";
-        infoLogPublisher.publish(msgd);
+    msgd.data = "waitToDrop turned to false";
+    infoLogPublisher.publish(msgd);
 }
 
 
@@ -2724,4 +2745,3 @@ void CNMSetUpID(const ros::TimerEvent& event)
     //send search controller myId
     searchController.setSearchDist(myID);
 }
-
