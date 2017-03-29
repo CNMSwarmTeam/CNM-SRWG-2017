@@ -68,6 +68,11 @@ int main(int argc, char** argv) {
 
 void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_msgs::Range::ConstPtr& sonarCenter, const sensor_msgs::Range::ConstPtr& sonarRight) {
 	std_msgs::UInt8 obstacleMode;
+
+//1 Obstacle right
+//2 Obstacle left/center
+//3 Obstacle Too Close
+//4 blockBlock
 	
 	if ((sonarLeft->range > collisionDistance) && (sonarCenter->range > collisionDistance) && (sonarRight->range > collisionDistance)) 		{
 		obstacleMode.data = 0; //no collision
@@ -76,7 +81,13 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 	}
 	else if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) 
 	{
-		if(timerDone) 
+		if(0.45 > sonarRight->range > 0.25)
+		{
+		    obstacleMode.data = 3;
+		    timerDone = true;
+		    obstacleTimer.stop();
+		}		
+		else if(timerDone) 
 		{
 		    obstacleMode.data = 1; //collision on right side
 		}
@@ -88,7 +99,13 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 	}
 	else 
 	{
-		if(timerDone) 
+		if(0.45 > sonarLeft->range > 0.25)
+		{
+		    obstacleMode.data = 3;
+		    timerDone = true;
+		    obstacleTimer.stop();
+		}		
+		else if(timerDone)  
 		{
 		    obstacleMode.data = 2; //collision in front or on left side
 		}
@@ -98,6 +115,7 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 		    obstacleMode.data = 0;
 		}
 	}
+
 	if (sonarCenter->range < 0.12) //block in front of center unltrasound.
 	{
 		obstacleMode.data = 4;
