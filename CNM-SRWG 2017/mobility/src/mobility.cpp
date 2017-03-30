@@ -176,13 +176,13 @@ string RoverStatus;
 
 //CONSTANTS
 
-double CENTEROFFSET = .90;                                  //offset for seeing center
+double CENTEROFFSET = .65;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
 double AVOIDTARGDIST = .65;                                 //distance to drive for avoiding targets
 
 //ARRAYS FOR CENTER
 
-const int ASIZE = 100;
+const int ASIZE = 10;
 int centerIndex = 0;
 bool maxedCenterArray = false;
 
@@ -1299,6 +1299,11 @@ bool CNMTransformCode()
 
     float distToGoal = hypot(goalLocation.x - currentLocationMap.x, goalLocation.y - currentLocationMap.y);    
 
+    if(targetCollected)
+    { 
+	goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
+    }
+
     //TRY MAP??
     if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) >
         rotateOnlyAngleTolerance && !isCalculating)
@@ -1503,6 +1508,15 @@ bool CNMPickupCode()
 
     // we see a block and have not picked one up yet
     //CNM ADDED:    AND if we are not doing our reverse behavior
+
+    if(cnmSeenAnObstacle)
+    {
+	targetDetected = false;
+	sendDriveCommand(-0.15, 0.0);
+	stateMachineState = STATE_MACHINE_TRANSFORM;	
+	return false;
+    }     
+
     if (targetDetected && !targetCollected && !cnmReverse  && cnmCanCollectTags)
     {
         result = pickUpController.pickUpSelectedTarget(blockBlock);
@@ -1920,7 +1934,7 @@ bool CNMDropoffCalc()
     //float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
     float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
-    float visDistToCenter = 0.8;
+    float visDistToCenter = 0.5;
 
     if(distToCenter > visDistToCenter) { return false; }
     else { return true; }
@@ -2284,9 +2298,9 @@ void CNMProjectCenter()
     double normCurrentAngle = angles::normalize_angle_positive(currentLocationMap.theta);
 
     //CenterXCoordinates[centerIndex] = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    CenterXCoordinates[centerIndex] = currentLocationMap.x;
+    CenterXCoordinates[centerIndex] = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
     //CenterYCoordinates[centerIndex] = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-    CenterYCoordinates[centerIndex] = currentLocationMap.y;
+    CenterYCoordinates[centerIndex] = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
 
     CNMAVGCenter();
 }
