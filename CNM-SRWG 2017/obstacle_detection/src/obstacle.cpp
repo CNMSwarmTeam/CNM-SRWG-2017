@@ -26,6 +26,10 @@ bool rcObst = false;
 bool blockObst = false;
 bool timerDone = false;
 
+float left_0 = 0, center_0 = 0, right_0 = 0; //PW sonar distance readings now
+float left_1 = 0, center_1 = 0, right_1 = 0; //PW sonar distance readings one inverval back in time
+bool falseJump = false;
+
 //Publishers
 ros::Publisher obstaclePublish;
 
@@ -73,13 +77,53 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 //2 Obstacle left/center
 //3 Obstacle Too Close
 //4 blockBlock
-	
+
+	static bool first = true;
+
+	if(first)
+	{
+	    left_0 = sonarLeft->range;
+	    center_0 = sonarCenter->range;
+	    right_0 = sonarRight->range;
+	    first = false;
+	}
+
 	if ((sonarLeft->range > collisionDistance) && (sonarCenter->range > collisionDistance) && (sonarRight->range > collisionDistance)) 		{
 		obstacleMode.data = 0; //no collision
 		obstacleTimer.stop();
 		timerDone = false;
 	}
-	else if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) 
+	else
+	{
+	left_1 = left_0; //left sonar reading a moment ago
+	center_1 = center_0;
+	right_1 = right_0;
+
+	left_0 = sonarLeft->range; //left sonar reading now
+	center_0 = sonarCenter->range;
+	right_0 = sonarRight->range;
+
+	if((left_1 - left_0) > 2)
+	{
+	    falseJump = true;
+	}
+	else if((right_1 - right_0) > 2)
+	{
+	    falseJump = true;
+	}
+	else if((center_1 - center_0) > 2)
+	{
+	    falseJump = true;
+	}
+	else
+	{
+	    falseJump = false;
+	} 
+
+	if(!falseJump)
+	{
+
+	if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) 
 	{
 		if(0.45 > sonarRight->range > 0.25)
 		{
@@ -97,7 +141,7 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 		    obstacleMode.data = 0;
 		}
 	}
-	else 
+	else
 	{
 		if(0.45 > sonarLeft->range > 0.25)
 		{
@@ -120,8 +164,11 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 	{
 		obstacleMode.data = 4;
 	}
-	
+	}
+	}
         obstaclePublish.publish(obstacleMode);
+
+	falseJump = false;
 }
 
 void IsAnObstacle(const ros::TimerEvent& event)

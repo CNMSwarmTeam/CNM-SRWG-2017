@@ -182,7 +182,7 @@ double AVOIDTARGDIST = .65;                                 //distance to drive 
 
 //ARRAYS FOR CENTER
 
-const int ASIZE = 40;
+const int ASIZE = 100;
 int centerIndex = 0;
 bool maxedCenterArray = false;
 
@@ -529,7 +529,7 @@ int main(int argc, char **argv)
     //CNM TIMERS
     //----------------------------------------------------
 
-    cnmSetUpID = mNH.createTimer(ros::Duration(rng->uniformReal(1, 5)), CNMSetUpID, true);
+    cnmSetUpID = mNH.createTimer(ros::Duration(rng->uniformReal(0, 3)), CNMSetUpID, true);
     cnmSetUpID.stop();
 
     //-----INITIAL CENTER FIND TIMERS-----
@@ -564,8 +564,8 @@ int main(int argc, char **argv)
 
     //-----DROPOFF TIMERS-----
 
-    //cnmDropOffDriveTimer = mNH.createTimer(cnm2dot8SecTime, CNMDropOffDrive, true);  //ROVER
-    cnmDropOffDriveTimer = mNH.createTimer(cnm4SecTime, CNMDropOffDrive, true);    //SIM
+    cnmDropOffDriveTimer = mNH.createTimer(cnm2dot8SecTime, CNMDropOffDrive, true);  //ROVER
+    //cnmDropOffDriveTimer = mNH.createTimer(cnm4SecTime, CNMDropOffDrive, true);    //SIM
     cnmDropOffDriveTimer.stop();
 
     cnmDropOffReverse = mNH.createTimer(cnm4SecTime, CNMDropReversed, true);
@@ -625,6 +625,8 @@ int main(int argc, char **argv)
 // controllers in the abridge package.
 void mobilityStateMachine(const ros::TimerEvent&)
 {
+
+    cnmSetUpID.start();
 
     std_msgs::String stateMachineMsg;
 
@@ -838,6 +840,12 @@ void targetHandler(const apriltags_ros::AprilTagDetectionArray::ConstPtr& messag
             }
         }
 
+
+	if(centerSeen)
+	{
+	    CNMProjectCenter();
+	}
+
         if(numTargets == 0 && isDroppingOff) { seeMoreTargets = 0; }
 
         //dropOffController.setDataTargets(count,countLeft,countRight);
@@ -988,7 +996,7 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
     else if ((!targetDetected || targetCollected) && (message->data > 0))
     {
         //If we can start looking for obstacles
-        if(cnmStartObstDetect)
+        if(cnmStartObstDetect && !isDroppingOff)
         {            
             cnmSeenAnObstacle = true;                       //We saw an obstacle
 
@@ -1075,10 +1083,10 @@ void obstacleHandler(const std_msgs::UInt8::ConstPtr& message)
                 firstTimeRotate = true;
             }
 
-            goalLocation.theta = currentLocation.theta + (M_PI/6);
+            goalLocation.theta = currentLocationMap.theta + (M_PI/6);
 
-            goalLocation.x = currentLocation.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
-	    goalLocation.y = currentLocation.y + (AVOIDOBSTDIST * (sin(goalLocation.theta)));
+            goalLocation.x = currentLocationMap.x + (AVOIDOBSTDIST * (cos(goalLocation.theta)));
+	    goalLocation.y = currentLocationMap.y + (AVOIDOBSTDIST * (sin(goalLocation.theta)));
 
 	    //stateMachineState = STATE_MACHINE_ROTATE;
 
@@ -1273,9 +1281,11 @@ void InitComp()
 
 bool CNMTransformCode()
 {
-
+   std_msgs::String msg;
    static bool isCalculating = false;
    static bool firstCantTransform = true;
+   static bool goToNextPoint = false;
+
 //MUST TEST:  using currentLocation vs using currentMapLocation
 
    // If returning with a target
@@ -1287,16 +1297,18 @@ bool CNMTransformCode()
     //If angle between current and goal is significant
     //if error in heading is greater than 0.4 radians
 
+    float distToGoal = hypot(goalLocation.x - currentLocationMap.x, goalLocation.y - currentLocationMap.y);    
+
     //TRY MAP??
-    if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) >
+    if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) >
         rotateOnlyAngleTolerance && !isCalculating)
     {
         stateMachineState = STATE_MACHINE_ROTATE;
     }
 
     //If goal has not yet been reached drive and maintain heading
-    else if (fabs(angles::shortest_angular_distance(currentLocation.theta,
-        atan2(goalLocation.y - currentLocation.y, goalLocation.x - currentLocation.x))) < M_PI_2 && !isCalculating)
+    else if (fabs(angles::shortest_angular_distance(currentLocationMap.theta,
+        atan2(goalLocation.y - currentLocationMap.y, goalLocation.x - currentLocationMap.x))) < M_PI_2 && !isCalculating)
     {
         stateMachineState = STATE_MACHINE_SKID_STEER;
     }
@@ -1307,13 +1319,25 @@ bool CNMTransformCode()
     else if (!targetDetected && timerTimeElapsed > returnToSearchDelay && cnmInitialPositioningComplete)
     //else if(!targetDetected && distToGoal < 0.5 && timerTimeElapsed > returnToSearchDelay && cnmInitialPositioningComplete)
     {
-	std_msgs::String msg;
 
 	static bool firstTimeCalculate = true;
-	bool goToNextPoint = CNMCurrentLocationAVG();
 
-    	float distToGoal = hypot(goalLocation.x - currentLocation.x, goalLocation.y - currentLocation.y);    
+	if(isCalculating && !centerSeen && !isDroppingOff)
+        {
+            if(cnmReverse) { CNMReverseReset(); }
+            sendDriveCommand(0.0, 0.0);
 
+	    //msg.data = "Calculating point to go to";
+	    //infoLogPublisher.publish(msg);
+
+	    goToNextPoint = CNMCurrentLocationAVG();
+	    
+	    if(goToNextPoint)
+	    {
+		isCalculating = false;
+	    }
+        }
+	
 	if(!centerSeen && goToNextPoint && !isDroppingOff)
 	{
             firstTimeCalculate = true;
@@ -1322,6 +1346,8 @@ bool CNMTransformCode()
             double distance;
 	    int rotations;
     	    bool hasRotated = searchController.getHasDoneRotation();
+
+	    goToNextPoint = false;
 
             goalLocation = searchController.search(cnmAVGCurrentLocation);
 
@@ -1340,20 +1366,15 @@ bool CNMTransformCode()
 	    msg.data = ss.str();
             infoLogPublisher.publish(msg);
 	}
-	else if(!goToNextPoint || distToGoal < 3.8)
+	else if(!goToNextPoint && !isCalculating)
 	{
 	    if(firstTimeCalculate)
             {
-	        msg.data = "Calculating point to go to";
-	        infoLogPublisher.publish(msg);
 		firstTimeCalculate = false;
 		isCalculating = true;
+
+		goalLocation = currentLocationMap;
 	    }
-
-	    if(cnmReverse) { CNMReverseReset(); }
-
-
-	    sendDriveCommand(0.0, 0.0);
 	}
 
 	else if(isDroppingOff)
@@ -1365,8 +1386,8 @@ bool CNMTransformCode()
 	
 	else 
 	{ 
-	    msg.data = "Did I make it here?";
-	    infoLogPublisher.publish(msg);
+	    //msg.data = "Did I make it here?";
+	    //infoLogPublisher.publish(msg);
 	    sendDriveCommand(0.0, 0.0); 
 	}
 	
@@ -1380,7 +1401,7 @@ bool CNMTransformCode()
 	    ss << "Time:  " << timerTimeElapsed << " can't transform";
             msg.data = ss.str();
             infoLogPublisher.publish(msg);	
-	    goalLocation = currentLocation;
+	    goalLocation = currentLocationMap;
 	    firstCantTransform = false;        
 	}
 
@@ -1397,22 +1418,28 @@ bool CNMRotateCode()
 
     // Calculate the diffrence between current and desired
     // heading in radians.
-    float errorYaw = angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta);
-    int dirToRotate = 1;
+    float errorYaw = angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta);
+    int turnDir = 1;
 
-    if(errorYaw < 0) { dirToRotate = -1; }
+    if(errorYaw < 0) { turnDir = -1; }
 
     // If angle > 0.4 radians rotate but dont drive forward.
-    if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) > rotateOnlyAngleTolerance)
+    if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) > rotateOnlyAngleTolerance)
     {
-
-	float turnSpeed = 0.25 * dirToRotate;
+	//std_msgs::String msg;
+	//msg.data = "Rotate 1";
+	//infoLogPublisher.publish(msg);
+	//float turnSpeed = -0.15 * dirToRotate;
         // rotate but dont drive 0.05 is to prevent turning in reverse
-        sendDriveCommand((-0.05 * dirToRotate), turnSpeed);
+        sendDriveCommand(0.05, .3 * turnDir);
         return true;
     }
     else
     {
+	//std_msgs::String msg;
+	//msg.data = "Changing to SkidSteer";
+	//infoLogPublisher.publish(msg);
+
         // move to differential drive step
         stateMachineState = STATE_MACHINE_SKID_STEER;
         //fall through on purpose.
@@ -1427,24 +1454,37 @@ void CNMSkidSteerCode()
 //MUST TEST:  Using currentLocation vs currentLocationMap
 
     // calculate the distance between current and desired heading in radians
-    float errorYaw = angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta);
+    float errorYaw = angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta);
+
+    int turnDir = 1;
+
+    if(errorYaw < 0) { turnDir = -1; }
 
     // goal not yet reached drive while maintaining proper heading.
-    if (fabs(angles::shortest_angular_distance(currentLocation.theta, atan2(goalLocation.y - currentLocation.y, goalLocation.x - 	    currentLocation.x))) < M_PI_2)
+    if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, atan2(goalLocation.y - currentLocationMap.y, goalLocation.x - 	    currentLocationMap.x))) < M_PI_2)
     {
+        //std_msgs::String msg;
+	//msg.data = "SkidSteer 1";
+	//infoLogPublisher.publish(msg);
        	// drive and turn simultaniously
-       	sendDriveCommand(searchVelocity, errorYaw / 2);
+       	sendDriveCommand(searchVelocity, .3 * turnDir);
     }
     // goal is reached but desired heading is still wrong turn only
-    else if (fabs(angles::shortest_angular_distance(currentLocation.theta, goalLocation.theta)) > 0.1)
+    else if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) > 0.1)
     {
+	//std_msgs::String msg;
+	//msg.data = "SkidSteer 2";
+	//infoLogPublisher.publish(msg);
         // rotate but dont drive
-        sendDriveCommand(0.0, errorYaw);
+        sendDriveCommand(0.05, .3 * turnDir);
     }
     else
     {
+	//std_msgs::String msg;
+	//msg.data = "STOP";
+	//infoLogPublisher.publish(msg);
         // stop
-        sendDriveCommand(0.0, 0.0);
+        //sendDriveCommand(0.0, 0.0);
 
         // move back to transform step
         stateMachineState = STATE_MACHINE_TRANSFORM;
@@ -1534,8 +1574,10 @@ bool CNMPickupCode()
             goalLocation.x = cnmCenterLocation.x;
             goalLocation.y = cnmCenterLocation.y;
 
+//	    goalLocation = cnmCenterLocation;
+
             //Hand off to rotate
-            stateMachineState = STATE_MACHINE_TRANSFORM;
+            stateMachineState = STATE_MACHINE_ROTATE;
 
             cnmAfterPickUpTimer.start();
 
@@ -1545,8 +1587,8 @@ bool CNMPickupCode()
         }
         else
         {
-	    if(searchController.cnmIsAlternating()) { sendDriveCommand(0.0, -0.15); }
-	    else { sendDriveCommand(0.0, 0.15); }
+	    if(searchController.cnmIsAlternating()) { sendDriveCommand(-0.1, 0.15); }
+	    else { sendDriveCommand(-0.1, 0.15); }
         }
     }
     else
@@ -1567,6 +1609,8 @@ bool CNMDropOffCode()
 	static bool startDropOff = false;
 	static bool searchingForCenter = false; 
 	static bool firstInWait = true;
+
+	static bool change = false;
 
 	bool atCenter = CNMDropoffCalc();
 
@@ -1592,6 +1636,7 @@ bool CNMDropOffCode()
 	    searchingForCenter = false;
 	    backUp = false;
 	    dropOffReset = false;
+	    change = false;
 
             finishedProtocolPub.publish(msg);           //dropoffProtocol
 
@@ -1640,17 +1685,12 @@ bool CNMDropOffCode()
 		//add current position to center array
 	    }
 
-	    //store one GPS x and y
-	    CenterXCoordinates[centerIndex] = currentLocationMap.x;
-    	    CenterYCoordinates[centerIndex] = currentLocationMap.y;
-
-	    CNMAVGCenter();
-
-	    //store one ODOM x and y
-	    CenterYCoordinates[centerIndex] = currentLocation.y;
-	    CenterXCoordinates[centerIndex] = currentLocation.x;
-
-	    CNMAVGCenter();
+	    for(int i = 0; i < ASIZE; i++)
+	    {
+		//flood x and y coordinates
+	        CenterXCoordinates[i] = currentLocationMap.x;
+    	        CenterYCoordinates[i] = currentLocationMap.y;
+	    }
 
 	    backUp = true;		    	    
 	    cnmCanCollectTags = false;              	//Don't try to collect tags
@@ -1728,7 +1768,7 @@ bool CNMDropOffCode()
 	else if(waitToDrop)
 	{
 	    //calcs current distance to center
-    	    float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
+    	    float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
 	    //If we are less than 1.5 from our perceived center 
 	    if(distToCenter < 1.5)
@@ -1781,15 +1821,56 @@ bool CNMDropOffCode()
                 dropProtocolPub.publish(msg); 	//triggers waitToDrop	//dropOffProtocol
 	    }
 	    
-            goalLocation = currentLocation;
+            goalLocation = currentLocationMap;
 	    startDropOff = true;
 	}
 	
 	//If we are looking for the center
 	else if(searchingForCenter)
 	{
-	    goalLocation = searchController.search(currentLocationMap);
-	    stateMachineState = STATE_MACHINE_ROTATE;
+	    std_msgs::String msg;
+	    static bool firstTimeCalculate = true;
+	    bool goToNextPoint = CNMCurrentLocationAVG();
+
+	    if(goToNextPoint)
+	    {
+        	int position;
+        	double distance;
+		int rotations;
+    		bool hasRotated = searchController.getHasDoneRotation();
+
+		firstTimeCalculate = true;
+
+		goalLocation = searchController.search(cnmAVGCurrentLocation);
+		stateMachineState = STATE_MACHINE_ROTATE;
+
+       		position = searchController.cnmGetSearchPosition();
+
+        	distance = searchController.cnmGetSearchDistance();
+
+		rotations = searchController.cnmGetNumRotations();
+
+        	stringstream ss;
+        	ss << "Traveling to point " << position << " at " << distance << " meters;" << " Rotations: " << rotations;
+            
+		msg.data = ss.str();
+	        infoLogPublisher.publish(msg);
+
+		stateMachineState = STATE_MACHINE_ROTATE;
+
+		return false;
+	    }
+	    else
+	    {
+		if(firstTimeCalculate)
+		{
+	            msg.data = "Calculating point to go to";
+	            infoLogPublisher.publish(msg);
+		    firstTimeCalculate = false;
+		}
+
+		sendDriveCommand(0.0, 0.0);
+	    }
 	}
 
 	//If we should have found the center by now
@@ -1800,34 +1881,22 @@ bool CNMDropOffCode()
             infoLogPublisher.publish(msg);
 
 	    searchController.AmILost(true);
-	    searchController.setCenterLocation(currentLocation);
+	    searchController.setCenterLocation(currentLocationMap);
 	    IWasLost = true;
 
 	    //Start Looking!
 	    searchingForCenter = true;
 
 	    stateMachineState = STATE_MACHINE_ROTATE;
+
+	    return false;
 	}
 	else
  	{
-	    static bool change = false;
-
 	    std_msgs::String msg;
 
-            //TEST:  MAP VS ODOM
-	    if(change)
-	    {
-
-            	msg.data = "Can't Find Center, using GPS";
-            	goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
-		change = false;
-	    }
-	    else
-	    {
-		msg.data = "Can't Find Center, using Odom";
-		goalLocation.theta = atan2(cnmCenterLocation.y - currentLocation.y, cnmCenterLocation.x - currentLocation.x);
-		change = true;
-	    }
+            msg.data = "Can't Find home, using GPS";
+            goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
 
 	    infoLogPublisher.publish(msg);
 
@@ -1836,6 +1905,8 @@ bool CNMDropOffCode()
             goalLocation.y = cnmCenterLocation.y;
 
             stateMachineState = STATE_MACHINE_ROTATE;
+
+	    return false;
 	}
 
     return true;
@@ -1846,8 +1917,8 @@ bool CNMDropoffCalc()
 {
     // calculate the euclidean distance between
     // centerLocation and currentLocation
-    float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
-    //float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
+    //float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
+    float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
     float visDistToCenter = 0.8;
 
@@ -1899,7 +1970,7 @@ void CNMFirstBoot()
         msg.data = ss.str();
         infoLogPublisher.publish(msg);
 
-        goalLocation = currentLocation;
+        goalLocation = currentLocationMap;
         sendDriveCommand(0.0, 0.0);
 
         firstTimeInBoot = false;
@@ -2045,12 +2116,12 @@ void CNMStartReversing()
 void CNMTargetAvoid()
 {
     //Try to keep targets in the left
-    if(numTargLeft > numTargRight) { goalLocation.theta = currentLocation.theta - (M_PI/6); }
-    else { goalLocation.theta = currentLocation.theta + (M_PI/6); }
+    if(numTargLeft > numTargRight) { goalLocation.theta = currentLocationMap.theta - (M_PI/6); }
+    else { goalLocation.theta = currentLocationMap.theta + (M_PI/6); }
 
     //select new position 25 cm from current location
-    goalLocation.x = currentLocation.x + (AVOIDTARGDIST * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + (AVOIDTARGDIST * sin(goalLocation.theta));
+    goalLocation.x = currentLocationMap.x + (AVOIDTARGDIST * cos(goalLocation.theta));
+    goalLocation.y = currentLocationMap.y + (AVOIDTARGDIST * sin(goalLocation.theta));
 
 //    stateMachineState = STATE_MACHINE_ROTATE;
 
@@ -2078,7 +2149,7 @@ bool CNMCentered()
 //        cnmFinishedCenteringTimer.start();
     }
 
-    goalLocation = currentLocation;
+    goalLocation = currentLocationMap;
 
     if(!cnmReverse)
     {
@@ -2119,7 +2190,7 @@ bool CNMCentered()
 		{
 		    cnmConfirmCentered.start();
 
-		    goalLocation = currentLocation;
+		    goalLocation = currentLocationMap;
 		    sendDriveCommand(0.0, 0.0);
 		    return false;
 		}
@@ -2213,9 +2284,9 @@ void CNMProjectCenter()
     double normCurrentAngle = angles::normalize_angle_positive(currentLocationMap.theta);
 
     //CenterXCoordinates[centerIndex] = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    CenterXCoordinates[centerIndex] = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    CenterXCoordinates[centerIndex] = currentLocationMap.x;
     //CenterYCoordinates[centerIndex] = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-    CenterYCoordinates[centerIndex] = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+    CenterYCoordinates[centerIndex] = currentLocationMap.y;
 
     CNMAVGCenter();
 }
@@ -2326,7 +2397,7 @@ void CNMReactToCenterProtocol()
     { 
 	//stop
         CNMReverseReset();
-        goalLocation = currentLocation;        
+        goalLocation = currentLocationMap;        
     }
 
     //
@@ -2344,7 +2415,7 @@ void CNMReactToCenterProtocol()
         msg.data = "Seen A Center Tag";
         infoLogPublisher.publish(msg);
 
-        goalLocation = currentLocation;
+        goalLocation = currentLocationMap;
         stateMachineState = STATE_MACHINE_TRANSFORM;
 
         if(cnmFirstBootProtocol)
@@ -2456,11 +2527,11 @@ void CNMInitPositioning(const ros::TimerEvent &event)
 //    msg.data = "Initial Wait Time Complete, Driving Forward";
 //    infoLogPublisher.publish(msg);
 
-    goalLocation.theta = currentLocation.theta;
+    goalLocation.theta = currentLocationMap.theta;
 
     //select position 25 cm from the robots location before attempting to go into search pattern
-    goalLocation.x = currentLocation.x + (.45 * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + (.45 * sin(goalLocation.theta));
+    goalLocation.x = currentLocationMap.x + (.45 * cos(goalLocation.theta));
+    goalLocation.y = currentLocationMap.y + (.45 * sin(goalLocation.theta));
 
     cnmHasWaitedInitialAmount = true;
 }
@@ -2512,7 +2583,7 @@ void CNMInitialWait(const ros::TimerEvent &e)
     int rotations;
     bool hasRotated = searchController.getHasDoneRotation();
 
-    goalLocation = searchController.search(currentLocation);
+    goalLocation = searchController.search(currentLocationMap);
 
     position = searchController.cnmGetSearchPosition();
 
@@ -2557,12 +2628,12 @@ void CNMAvoidOtherTargets(const ros::TimerEvent& event)
 
     cnmAvoidObstacleTimer.stop();
 
-    if(searchController.cnmIsAlternating()) { goalLocation.theta = currentLocation.theta - (M_PI/6); }
-    else { goalLocation.theta = currentLocation.theta + (M_PI/6); }
+    if(searchController.cnmIsAlternating()) { goalLocation.theta = currentLocationMap.theta - (M_PI/6); }
+    else { goalLocation.theta = currentLocationMap.theta + (M_PI/6); }
 
     //select new position 25 cm from current location
-    goalLocation.x = currentLocation.x + (AVOIDTARGDIST * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + (AVOIDTARGDIST * sin(goalLocation.theta));
+    goalLocation.x = currentLocationMap.x + (AVOIDTARGDIST * cos(goalLocation.theta));
+    goalLocation.y = currentLocationMap.y + (AVOIDTARGDIST * sin(goalLocation.theta));
 
     stateMachineState = STATE_MACHINE_ROTATE;
 
@@ -2580,13 +2651,13 @@ void CNMReverseTimer(const ros::TimerEvent& event)
     cnmTurn180Timer.start();
 
     //set NEW heading 180 degrees from current theta
-    goalLocation.theta = currentLocation.theta + M_PI;
+    goalLocation.theta = currentLocationMap.theta + M_PI;
 
     double searchDist = searchController.cnmGetSearchDistance();
 
     //select position however far away we are currently searching from the robots location before attempting to go into search pattern
-    goalLocation.x = currentLocation.x + ((searchDist / 2) * cos(goalLocation.theta));
-    goalLocation.y = currentLocation.y + ((searchDist / 2) * sin(goalLocation.theta));
+    goalLocation.x = currentLocationMap.x + ((searchDist / 2) * cos(goalLocation.theta));
+    goalLocation.y = currentLocationMap.y + ((searchDist / 2) * sin(goalLocation.theta));
 
     //change robot state
     stateMachineState = STATE_MACHINE_ROTATE;
@@ -2613,7 +2684,7 @@ void CNMTurn180(const ros::TimerEvent& event)
 
     //Continue an interrupted search pattern
     //---------------------------------------------
-    goalLocation = searchController.continueInterruptedSearch(currentLocation, goalLocation);
+    goalLocation = searchController.continueInterruptedSearch(currentLocationMap, goalLocation);
 
     //ROTATE!!!
     //---------------------------------------------
@@ -2745,3 +2816,4 @@ void CNMSetUpID(const ros::TimerEvent& event)
     //send search controller myId
     searchController.setSearchDist(myID);
 }
+

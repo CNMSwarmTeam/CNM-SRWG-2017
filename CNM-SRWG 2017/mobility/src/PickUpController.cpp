@@ -20,8 +20,8 @@ PickUpController::PickUpController()
 PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
     //threshold distance to be from the target block before attempting pickup
-    float targetDist = 0.08;  //meters // SIM
-//    float targetDist = 0.16; //meters	//ORIGINALLY 0.22  ROVER
+//    float targetDist = 0.08;  //meters // SIM
+    float targetDist = 0.145; //meters	//ORIGINALLY 0.22  ROVER
 
     //GRIPPER OPTIMUM SETTING:
     //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
@@ -65,7 +65,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         float vel = blockDist * 0.20;
         //if (vel < 0.1) vel = 0.1;
         //if (vel > 0.2) vel = 0.2;
-	vel = 0.1;        
+	vel = 0.15;        
 	result.cmdVel = vel;
         result.angleError = -blockYawError/2;
         timeOut = false;
@@ -85,7 +85,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         result.angleError = 0.0;
         result.wristAngle = 0;
     }
-    else if (Td > .8) //close the fingers and stop driving	(1.8)
+    else if (Td > 1) //close the fingers and stop driving	(1.8)
     {
         result.cmdVel = 0.0;
         result.angleError = 0.0;
@@ -93,9 +93,9 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
         return result;
     }
 
-    if (Td > 2.4 && timeOut)
+    if (Td > 3.0 && timeOut)
     {
-/*        if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
+        if (blockBlock && lockTarget) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
         {
             result.pickedUp = true;
         }
@@ -106,12 +106,12 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
             //set gripper
             result.fingerAngle = 2;
             result.wristAngle = 0;
-	}*/
+	}
     }
 
-    if (Td > 3.5 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
+    if (Td > 4.5 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
     {
-        if (blockBlock) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
+        if (blockBlock && lockTarget) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
         {
             result.pickedUp = true;
         }
