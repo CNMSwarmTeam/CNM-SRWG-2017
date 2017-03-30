@@ -167,9 +167,10 @@ void targetDetectedReset(const ros::TimerEvent& event);
 //--------------------------------------------
 
 
-//VAIRABLES FOR SETTING ORDER				//startOrder
+//VAIRABLES FOR //startOrder
 bool testCount = false;		//bool for window to increment
-float cnmStartOrder = 0;				
+float cnmStartOrder = 0;
+float highestNum = 0; 		//startCheck				
 
 //CONSTANTS
 
@@ -193,6 +194,10 @@ float avgCurrentCoordsX[ASIZE];
 float avgCurrentCoordsY[ASIZE];
 
 geometry_msgs::Pose2D cnmAVGCurrentLocation; 
+
+//Arrays for //startCheck
+float startCheck3Array [3] = {0, 0, 0};
+float startCheck6Array [6] = {0, 0, 0, 0, 0, 0};
 
 //Target Collection Variables
 //--------------------------------------------
@@ -260,9 +265,10 @@ bool isDroppingOff = false;
 bool readyToDrop = false;
 bool dropNow = false;
 bool seeMoreTargets = false;
-bool waitToDrop = false;
+bool waitToDrop = false;					//dropOffProtocol
 bool backUp = false;
 bool dropOffReset = false;
+bool failsafe = false;						//dropOffFailSafe
 
 //Variables for reverse/180 behvaior
 bool firstReverse = true;
@@ -298,6 +304,7 @@ ros::Duration cnm5SecTime(5);
 ros::Duration cnm6SecTime(6);
 ros::Duration cnm8SecTime(8);
 ros::Duration cnm10SecTime(10);
+ros::Duration cnm180SecTime(180);		//dropOffFailSafe
 
 //First Boot Timers
 //---------------------------------------------
@@ -348,6 +355,9 @@ ros::Timer cnmTurn180Timer;
 ros::Timer cnmFinishedCenteringTimer;
 ros::Timer cnmAfterPickUpTimer;
 ros::Timer cnmConfirmCentered;
+
+//DropOffFAilSafe Timers - in case swarmie is stuck at dropOff
+ros::Timer cnmDropOffFailSafe;					//dropOffFailSafe
 
 //CNM moved ORIGINAL CODE to utility functions
 //---------------------------------------------
@@ -430,6 +440,9 @@ void CNMWaitToCollectTags(const ros::TimerEvent& event);        //Handler trigge
 
 //Target Avoidance Timer
 void CNMAvoidOtherTargets(const ros::TimerEvent& event);        //NOT BEING USED
+
+//dropOffFailSafe
+void CNMFailSafe(const ros::TimerEvent& event);
 
 //MAIN
 //--------------------------------------------
@@ -565,6 +578,10 @@ int main(int argc, char **argv)
 
     cnmConfirmCentered = mNH.createTimer(cnm1SecTime, CNMWaitToConfirm, true);
     cnmConfirmCentered.stop();
+
+    //dropOffFailSafe TIMER
+    cnmDropOffFailSafe = mNH.createTimer(cnm180SecTime, CNMFailSafe, true);
+    cnmDropOffFailSafe.stop();
 
     tfListener = new tf::TransformListener();
     std_msgs::String msg;
@@ -1533,9 +1550,9 @@ bool CNMDropOffCode()
 	    backUp = false;
 	    dropOffReset = false;
 
-            finishedProtocolPub.publish(msg);           //dropoffProtocol
-
-	    cnmWaitToCollectTagsTimer.start();      	//Start Timer to trigger back to true
+            finishedProtocolPub.publish(msg);           //triggers waitToDrop to false //dropoffProtocol
+	    failsafe = false;		//dropOffFailsafe	//enables swarmie to publish waitToDrop is true
+	    cnmWaitToCollectTagsTimer.start();      	//Start Timer to trigger waitToDrop back to true
 
 	    CNMReverseReset();
             CNMStartReversing();		
@@ -1699,7 +1716,11 @@ bool CNMDropOffCode()
             	isDroppingOff = true;
             	firstCenterSeen = false;
 
-                dropProtocolPub.publish(msg); 	//triggers waitToDrop	//dropOffProtocol
+		if(failsafe == false)			//can't publish waitToDrop is true, if having trouble dropping
+		{                
+		     dropProtocolPub.publish(msg); 	//triggers waitToDrop to true	//dropOffProtocol
+                }
+		cnmDropOffFailSafe.start();					//dropOffFailSafe
 	    }
 	    
             goalLocation = currentLocation;
@@ -2673,4 +2694,10 @@ void CNMWaitToConfirm(const ros::TimerEvent& event)
 {
     confirmedCenter = true;   
     cnmConfirmCentered.stop();
+}
+
+void CNMFailSafe(const ros::TimerEvent& event)			//dropOffFailSafe
+{
+    finishedProtocolPub.publish(msg);	
+    failsafe = true;			//triggers waitToDrop to false
 }
