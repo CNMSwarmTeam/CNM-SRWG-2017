@@ -176,13 +176,13 @@ string RoverStatus;
 
 //CONSTANTS
 
-double CENTEROFFSET = .65;                                  //offset for seeing center
+double CENTEROFFSET = .90;                                  //offset for seeing center
 double AVOIDOBSTDIST = .55;                                 //distance to drive for avoiding targets
 double AVOIDTARGDIST = .65;                                 //distance to drive for avoiding targets
 
 //ARRAYS FOR CENTER
 
-const int ASIZE = 10;
+const int ASIZE = 100;
 int centerIndex = 0;
 bool maxedCenterArray = false;
 
@@ -692,7 +692,7 @@ void mobilityStateMachine(const ros::TimerEvent&)
                 fingerAnglePublish.publish(angle);
 
                 //raise wrist partially (avoid obstacle calls)
-                angle.data = 1.0;	//0.6 is to avoid dragging cube on the ground
+                angle.data = .6;	//0.6 is to avoid dragging cube on the ground
 
                 // raise wrist
                 wristAnglePublish.publish(angle);
@@ -1299,11 +1299,6 @@ bool CNMTransformCode()
 
     float distToGoal = hypot(goalLocation.x - currentLocationMap.x, goalLocation.y - currentLocationMap.y);    
 
-    if(targetCollected)
-    { 
-	goalLocation.theta = atan2(cnmCenterLocation.y - currentLocationMap.y, cnmCenterLocation.x - currentLocationMap.x);
-    }
-
     //TRY MAP??
     if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) >
         rotateOnlyAngleTolerance && !isCalculating)
@@ -1436,7 +1431,7 @@ bool CNMRotateCode()
 	//infoLogPublisher.publish(msg);
 	//float turnSpeed = -0.15 * dirToRotate;
         // rotate but dont drive 0.05 is to prevent turning in reverse
-        sendDriveCommand(0.05, .3 * turnDir);
+        sendDriveCommand(0.05, .2 * turnDir);
         return true;
     }
     else
@@ -1472,7 +1467,7 @@ void CNMSkidSteerCode()
 	//msg.data = "SkidSteer 1";
 	//infoLogPublisher.publish(msg);
        	// drive and turn simultaniously
-       	sendDriveCommand(searchVelocity, .3 * turnDir);
+       	sendDriveCommand(searchVelocity, .2 * turnDir);
     }
     // goal is reached but desired heading is still wrong turn only
     else if (fabs(angles::shortest_angular_distance(currentLocationMap.theta, goalLocation.theta)) > 0.1)
@@ -1481,7 +1476,7 @@ void CNMSkidSteerCode()
 	//msg.data = "SkidSteer 2";
 	//infoLogPublisher.publish(msg);
         // rotate but dont drive
-        sendDriveCommand(0.05, .3 * turnDir);
+        sendDriveCommand(0.05, .2 * turnDir);
     }
     else
     {
@@ -1508,15 +1503,6 @@ bool CNMPickupCode()
 
     // we see a block and have not picked one up yet
     //CNM ADDED:    AND if we are not doing our reverse behavior
-
-    if(cnmSeenAnObstacle)
-    {
-	targetDetected = false;
-	sendDriveCommand(-0.15, 0.0);
-	stateMachineState = STATE_MACHINE_TRANSFORM;	
-	return false;
-    }     
-
     if (targetDetected && !targetCollected && !cnmReverse  && cnmCanCollectTags)
     {
         result = pickUpController.pickUpSelectedTarget(blockBlock);
@@ -1557,7 +1543,7 @@ bool CNMPickupCode()
 
             // lower wrist to avoid ultrasound sensors
             std_msgs::Float32 angle;
-            angle.data = 1.2;  //.8
+            angle.data = .8;  //.8
             wristAnglePublish.publish(angle);
         }
     }
@@ -1934,7 +1920,7 @@ bool CNMDropoffCalc()
     //float distToCenter = hypot(cnmCenterLocation.x - currentLocation.x, cnmCenterLocation.y - currentLocation.y);
     float distToCenter = hypot(cnmCenterLocation.x - currentLocationMap.x, cnmCenterLocation.y - currentLocationMap.y);
 
-    float visDistToCenter = 0.5;
+    float visDistToCenter = 0.8;
 
     if(distToCenter > visDistToCenter) { return false; }
     else { return true; }
@@ -2298,9 +2284,9 @@ void CNMProjectCenter()
     double normCurrentAngle = angles::normalize_angle_positive(currentLocationMap.theta);
 
     //CenterXCoordinates[centerIndex] = currentLocation.x + (CENTEROFFSET * (cos(normCurrentAngle)));
-    CenterXCoordinates[centerIndex] = currentLocationMap.x + (CENTEROFFSET * (cos(normCurrentAngle)));
+    CenterXCoordinates[centerIndex] = currentLocationMap.x;
     //CenterYCoordinates[centerIndex] = currentLocation.y + (CENTEROFFSET * (sin(normCurrentAngle)));
-    CenterYCoordinates[centerIndex] = currentLocationMap.y + (CENTEROFFSET * (sin(normCurrentAngle)));
+    CenterYCoordinates[centerIndex] = currentLocationMap.y;
 
     CNMAVGCenter();
 }

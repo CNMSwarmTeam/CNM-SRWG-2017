@@ -21,7 +21,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 
     //threshold distance to be from the target block before attempting pickup
 //    float targetDist = 0.08;  //meters // SIM
-    float targetDist = 0.145; //meters	//ORIGINALLY 0.22  ROVER
+    float targetDist = 0.18; //meters	//ORIGINALLY 0.22  ROVER
 
     //GRIPPER OPTIMUM SETTING:
     //FINGERS:  0 - 2      (Any further and fingers deform[AKA right finger keeps rotating and left doesn't])
@@ -54,7 +54,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
             timeOut = true;
         }
         //if in a counting state and has been counting for 1 second
-        else if (Td > 1 && Td < 2.5)
+        else if (Td > 1 && Td < 1.5)
         {
             result.cmdVel = 0.1;    //-0.2
             result.angleError = 0.0;
@@ -109,7 +109,7 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
 	}
     }
 
-    if (Td > 4.5 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
+    if (Td > 3 && timeOut) //if enough time has passed enter a recovery state to re-attempt a pickup	(3.8)
     {
         if (blockBlock && lockTarget) //if the ultrasound is blocked at less than .12 meters a block has been picked up no new pickup required
         {
@@ -126,11 +126,11 @@ PickUpResult PickUpController::pickUpSelectedTarget(bool blockBlock) {
             result.angleError = 0.0;
             //set gripper
             result.fingerAngle = 2;
-            result.wristAngle = 1.6;
+            result.wristAngle = 1.2;
         }
     }
 
-    if (Td > 5 && timeOut) //if no targets are found after too long a period go back to search pattern
+    if (Td > 4 && timeOut) //if no targets are found after too long a period go back to search pattern
     {
         result.giveUp = true;
         lockTarget = false;
@@ -194,7 +194,7 @@ PickUpResult PickUpController::selectTarget(const apriltags_ros::AprilTagDetecti
 
         //set gripper;
         result.fingerAngle = 2.0;
-        result.wristAngle = 1.6;  //1.25
+        result.wristAngle = 1.2;  //1.25
     }
 
     return result;
