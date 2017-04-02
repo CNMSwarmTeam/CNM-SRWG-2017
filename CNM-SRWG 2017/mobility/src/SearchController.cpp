@@ -538,7 +538,7 @@ void SearchController::AmILost(bool answer)
     if(answer == true)
     {
 	searchLoop = rng->uniformInteger(1, 10);	//Start at random place in octagon(NOT 0)
-	searchCounter = 0.5;				//Reduce searchCounter to 0.5
+	searchCounter = .5;				//Reduce searchCounter to 0.5
     }
     else
     {	

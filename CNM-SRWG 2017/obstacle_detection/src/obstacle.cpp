@@ -8,18 +8,29 @@
 //ROS messages
 #include <std_msgs/UInt8.h>
 #include <sensor_msgs/Range.h>
+#include <std_msgs/String.h>
 
 using namespace std;
 
 //Globals
-double collisionDistance = 0.6; //meters the ultrasonic detectors will flag obstacles
+double collisionDistance = .5; //meters the ultrasonic detectors will flag obstacles
 string publishedName;
 char host[128];
 
 
-ros::Duration cnm1SecTime(0.25);
+//Timers
+ros::Duration cnm1SecTime(0.20);
 ros::Timer obstacleTimer;
+ros::Timer publish_heartbeat_timer;
+
+
 void IsAnObstacle(const ros::TimerEvent& event);
+
+
+float heartbeat_publish_interval = 2;
+
+//Publishers
+ros::Publisher heartbeatPublisher;
 
 bool leftObst = false;
 bool rcObst = false;
@@ -35,6 +46,8 @@ ros::Publisher obstaclePublish;
 
 //Callback handlers
 void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_msgs::Range::ConstPtr& sonarCenter, const sensor_msgs::Range::ConstPtr& sonarRight);
+
+void publishHeartBeatTimerEventHandler(const ros::TimerEvent& event);
 
 int main(int argc, char** argv) {
     gethostname(host, sizeof (host));
@@ -52,9 +65,7 @@ int main(int argc, char** argv) {
     ros::NodeHandle oNH;
     
     obstaclePublish = oNH.advertise<std_msgs::UInt8>((publishedName + "/obstacle"), 10);
-    
-    obstacleTimer = oNH.createTimer(cnm1SecTime, IsAnObstacle, true);
-    obstacleTimer.stop();
+    heartbeatPublisher = oNH.advertise<std_msgs::String>((publishedName + "/obstacle/heartbeat"), 1, true);
     
     message_filters::Subscriber<sensor_msgs::Range> sonarLeftSubscriber(oNH, (publishedName + "/sonarLeft"), 10);
     message_filters::Subscriber<sensor_msgs::Range> sonarCenterSubscriber(oNH, (publishedName + "/sonarCenter"), 10);
@@ -64,6 +75,12 @@ int main(int argc, char** argv) {
 
     message_filters::Synchronizer<sonarSyncPolicy> sonarSync(sonarSyncPolicy(10), sonarLeftSubscriber, sonarCenterSubscriber, sonarRightSubscriber);
     sonarSync.registerCallback(boost::bind(&sonarHandler, _1, _2, _3));
+
+    publish_heartbeat_timer = oNH.createTimer(ros::Duration(heartbeat_publish_interval), publishHeartBeatTimerEventHandler);
+
+    obstacleTimer = oNH.createTimer(cnm1SecTime, IsAnObstacle, true);
+    obstacleTimer.stop();
+
 
     ros::spin();
 
@@ -78,97 +95,38 @@ void sonarHandler(const sensor_msgs::Range::ConstPtr& sonarLeft, const sensor_ms
 //3 Obstacle Too Close
 //4 blockBlock
 
-	static bool first = true;
-
-	if(first)
-	{
-	    left_0 = sonarLeft->range;
-	    center_0 = sonarCenter->range;
-	    right_0 = sonarRight->range;
-	    first = false;
-	}
-
 	if ((sonarLeft->range > collisionDistance) && (sonarCenter->range > collisionDistance) && (sonarRight->range > collisionDistance)) 		{
 		obstacleMode.data = 0; //no collision
-		obstacleTimer.stop();
-		timerDone = false;
+	}
+	else if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) 
+	{
+            if(0.40 > sonarRight->range >= 0.13)
+	    {
+		obstacleMode.data = 3;
+	    }
+	    else		
+	    {
+ 	        obstacleMode.data = 1; //collision on right side
+	    }
 	}
 	else
 	{
-	left_1 = left_0; //left sonar reading a moment ago
-	center_1 = center_0;
-	right_1 = right_0;
-
-	left_0 = sonarLeft->range; //left sonar reading now
-	center_0 = sonarCenter->range;
-	right_0 = sonarRight->range;
-
-	if((left_1 - left_0) > 2)
-	{
-	    falseJump = true;
-	}
-	else if((right_1 - right_0) > 2)
-	{
-	    falseJump = true;
-	}
-	else if((center_1 - center_0) > 2)
-	{
-	    falseJump = true;
-	}
-	else
-	{
-	    falseJump = false;
-	} 
-
-	if(!falseJump)
-	{
-
-	if ((sonarLeft->range > collisionDistance) && (sonarRight->range < collisionDistance)) 
-	{
-		if(0.45 > sonarRight->range > 0.25)
-		{
-		    obstacleMode.data = 3;
-		    timerDone = true;
-		    obstacleTimer.stop();
-		}		
-		else if(timerDone) 
-		{
-		    obstacleMode.data = 1; //collision on right side
-		}
-		else
-		{
-		    obstacleTimer.start();
-		    obstacleMode.data = 0;
-		}
-	}
-	else
-	{
-		if(0.45 > sonarLeft->range > 0.25)
-		{
-		    obstacleMode.data = 3;
-		    timerDone = true;
-		    obstacleTimer.stop();
-		}		
-		else if(timerDone)  
-		{
-		    obstacleMode.data = 2; //collision in front or on left side
-		}
-		else
-		{
-		    obstacleTimer.start();
-		    obstacleMode.data = 0;
-		}
+	    if(0.40 > sonarLeft->range >= 0.13)
+	    {
+	        obstacleMode.data = 3;
+	    }		
+	    else  
+	    {
+	        obstacleMode.data = 2; //collision in front or on left side
+	    }
 	}
 
 	if (sonarCenter->range < 0.12) //block in front of center unltrasound.
 	{
 		obstacleMode.data = 4;
 	}
-	}
-	}
-        obstaclePublish.publish(obstacleMode);
 
-	falseJump = false;
+        obstaclePublish.publish(obstacleMode);
 }
 
 void IsAnObstacle(const ros::TimerEvent& event)
@@ -177,4 +135,11 @@ void IsAnObstacle(const ros::TimerEvent& event)
     timerDone = true;
     obstacleTimer.stop();
 
+}
+
+void publishHeartBeatTimerEventHandler(const ros::TimerEvent&) {
+    std_msgs::String msg;
+    msg.data = "";
+    heartbeatPublisher.publish(msg);
+     ROS_INFO("yes");
 }
